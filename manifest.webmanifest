@@ -3,8 +3,8 @@
  "short_name": "Elite Ventes",
  "start_url": "./",
  "display": "standalone",
- "background_color": "#0a2aa6",
- "theme_color": "#0a2aa6",
+ "background_color": "#06279e",
+ "theme_color": "#06279e",
  "lang": "fr",
  "icons": [
   {
