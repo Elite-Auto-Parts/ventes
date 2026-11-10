@@ -742,7 +742,8 @@ function dirModel(){
     else if(op.type==='client.cree'){names[p.id]=p.name;(newClients[op.vendor]=newClients[op.vendor]||[]).push({id:p.id,date:op.created_at.slice(0,10)})}
     if(op.type==='vente.creee'&&p.cname)names[p.cid]=p.cname;
   });
-  return {grid,obj,orders:Object.values(orders),names,newClients,qbo:d.qbo};
+  const cost=Object.fromEntries((d.couts||[]).map(c=>[c.id,+c.prix_achat]));
+  return {grid,obj,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],objMarge:d.objectif_marge||125000,prime:d.prime_par_point||15};
 }
 const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
 const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
@@ -770,6 +771,29 @@ function dirStats(M,ym){
   });
   return {vend:Object.values(vend).sort((a,b)=>b.valide-a.valide),objM,perDay,combo};
 }
+
+// Mois passés : historique Excel (jusqu'au 6 nov. 2026) + ventes saisies dans l'app, par agent et par mois
+function dirMonths(M){
+  const agg={},key=(ym,v)=>{const k=ym+'|'+v;return agg[k]||(agg[k]={ym,v,cR:0,cM:0,cL:0,cases:0,pts:0,vente:0,marge:0,hm:0,np:0,src:new Set()})};
+  M.hist.forEach(h=>{const a=key(h.ym,h.vendor);a.cR+=+h.caisses_rapides||0;a.cM+=+h.caisses_moyennes||0;a.cL+=+h.caisses_lentes||0;a.cases+=+h.caisses||0;a.pts+=+h.points||0;a.vente+=+h.ventes||0;a.marge+=+h.marge||0;a.hm+=+h.marge_hors_motex||0;a.np+=+h.non_paye||0;a.src.add('Excel')});
+  const t=today();
+  M.orders.forEach(o=>{if(o.status==='annulee')return;const a=key(o.date.slice(0,7),o.vend);a.src.add('App');
+    if(!o.paidAt)a.np+=oAmt(o);
+    o.lines.forEach(l=>{const g=M.grid[l.pid]||{},c=g.categorie||'moyenne',q=+l.qty||0,pv=+l.price||+g.price||0,pa=M.cost[l.pid]??pv,m=q*(pv-pa);
+      a['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=q;a.cases+=q;a.pts+=q*(l.pts??(+g.pts||0));a.vente+=q*pv;a.marge+=m;if(l.pid!=='motext')a.hm+=m})});
+  const months=[...new Set(Object.values(agg).map(a=>a.ym))].sort().reverse();
+  if(!months.length)return '<div class="card empty">Aucun mois à afficher.</div>';
+  const cur=t.slice(0,7);
+  return `<p class="muted" style="margin:0;font-size:12.5px">Points calculés avec la grille actuelle sur toutes les ventes, payées ou non. Jusqu'au 6 novembre 2026 : Liste Commande (Excel). Ensuite : ventes saisies dans l'app. Marge = prix de vente - prix d'achat. Visible par la Direction seulement.</p>`+months.map(ym=>{
+    const rows=Object.values(agg).filter(a=>a.ym===ym).sort((a,b)=>b.pts-a.pts),obj=M.obj[ym]||440,[y,m]=ym.split('-').map(Number);
+    const tot=rows.reduce((s,a)=>({pts:s.pts+a.pts,marge:s.marge+a.marge,vente:s.vente+a.vente,cases:s.cases+a.cases}),{pts:0,marge:0,vente:0,cases:0});
+    const td='style="padding:6px 5px;text-align:center;white-space:nowrap"';
+    return `<section class="card stack"><div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${MOIS[m-1][0].toUpperCase()+MOIS[m-1].slice(1)} ${y}${ym===cur?' <span class="chip c-info">en cours</span>':''}</b><span class="muted num" style="font-size:12.5px">${fq(tot.cases)} caisses · ${fmt(tot.marge)} HTG de marge</span></div>
+    <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;min-width:640px;font-size:13px">
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Points</th><th>% de ${obj}</th><th>Marge</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Prime ${M.prime}/pt</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
+    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b></td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}>${fmt(a.pts*M.prime)}</td><td ${td}>${fq(a.cR)}</td><td ${td}>${fq(a.cM)}</td><td ${td}>${fq(a.cL)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
+    </tbody></table></div>${rows.some(a=>a.np>0)?`<span class="muted" style="font-size:12px">Non payé : ${rows.filter(a=>a.np>0).map(a=>esc(a.v)+' '+fmt(a.np)+' HTG').join(' · ')}</span>`:''}</section>`}).join('');
+}
 function dirShell(){
   return `<header class="top"><div class="top-row">${LOGO}<div class="who"><b>Espace Direction</b><small>Elite Auto Parts · tous les vendeurs</small></div>
    <span class="net ${navigator.onLine?'':'off'}"><i></i>${navigator.onLine?'En ligne':'Hors ligne'}</span>
@@ -782,7 +806,7 @@ function dirRender(){
   const M=dirModel(),S2=dirStats(M,D.ym),[y,m]=D.ym.split('-').map(Number);
   const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
   const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
-  const tabs=[['equipe','Équipe'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  const tabs=[['equipe','Équipe'],['mois','Mois passés'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
   let body='';
   if(D.tab==='equipe'){
     body=`<section class="card hero"><div class="month-nav"><span class="lbl">Équipe · ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="dmprev" aria-label="Mois précédent">‹</button><button data-act="dmnext" aria-label="Mois suivant">›</button></span></div>
@@ -805,6 +829,8 @@ function dirRender(){
   } else if(D.tab==='credits'){
     const t=today(),all=M.orders.filter(o=>o.pay==='credit'&&!o.paidAt).sort((a,b)=>a.date<b.date?-1:1);
     body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
+  } else if(D.tab==='mois'){
+    body=dirMonths(M);
   } else if(D.tab==='vendeurs'){
     const vs=(D.data&&D.data.vendeurs)||[];
     body=`<section class="card"><b>Vendeurs</b><div class="rows">${vs.map(x=>`<div class="row"><div class="main"><b>${esc(x.name)}</b></div><div class="end">${x.active?'<span class="chip c-ok">Actif</span>':'<span class="chip c-mute">Inactif</span>'}</div></div>`).join('')}</div></section>
@@ -813,11 +839,11 @@ function dirRender(){
     <label class="f">PIN (4 à 8 chiffres)<input id="vpin" inputmode="numeric" autocomplete="off" maxlength="8"></label>
     <button class="btn" data-act="dsetpin">Enregistrer</button></section>`;
   } else {
-    const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort).map(r=>({...r,pts:+r.pts}));
+    const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort).map(r=>({...r,pts:+r.pts,prix_achat:M.cost[r.id]??''}));
     body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div><button class="btn sec" data-act="dsaveobj">Enregistrer l'objectif</button></section>
-    <section class="card stack"><b>Grille du mois</b><p class="muted" style="margin:0;font-size:13px">Les téléphones reçoivent la nouvelle grille à la prochaine connexion. Les ventes déjà saisies gardent leurs points.</p>
-    <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:600px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Catégorie</th><th>Pts</th><th>Prix HTG</th><th>Combinaison</th><th>Stock dépôt</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td><td><select data-gc="${esc(r.id)}" aria-label="Catégorie ${esc(r.name)}" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)">${['rapide','moyenne','lente'].map(c=>`<option value="${c}" ${r.categorie===c?'selected':''}>${CAT[c][0]}</option>`).join('')}</select></td>${['pts','price','combo','stock'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
+    <section class="card stack"><b>Grille du mois</b><p class="muted" style="margin:0;font-size:13px">Les téléphones reçoivent la nouvelle grille à la prochaine connexion. Les ventes déjà saisies gardent leurs points. Le prix d'achat reste visible seulement ici, jamais par les vendeurs.</p>
+    <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:600px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Catégorie</th><th>Pts</th><th>Prix achat</th><th>Prix HTG</th><th>Combinaison</th><th>Stock dépôt</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td><td><select data-gc="${esc(r.id)}" aria-label="Catégorie ${esc(r.name)}" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)">${['rapide','moyenne','lente'].map(c=>`<option value="${c}" ${r.categorie===c?'selected':''}>${CAT[c][0]}</option>`).join('')}</select></td>${['pts','prix_achat','price','combo','stock'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
     </tbody></table></div><button class="btn" data-act="dsavegrid">Publier la grille</button></section>`;
   }
   v.innerHTML=`<div class="seg">${tabs.map(([k,l])=>`<button data-act="dtab" data-f="${k}" class="${D.tab===k?'on':''}">${l}</button>`).join('')}</div>
@@ -837,7 +863,7 @@ document.addEventListener('click',async e=>{
   else if(a==='dsetpin'){try{await dirCall({action:'setPin',vendor:$('#vname').value,pin:$('#vpin').value});toast('Vendeur enregistré');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dsavegrid'){
-    const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r}));
+    const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r,prix_achat:M.cost[r.id]}));
     document.querySelectorAll('[data-gc]').forEach(i=>{const r=rows.find(x=>x.id===i.dataset.gc);if(r)r.categorie=i.value});
     document.querySelectorAll('[data-g]').forEach(i=>{const r=rows.find(x=>x.id===i.dataset.g);if(r)r[i.dataset.k]=parseFloat(String(i.value).replace(',','.'))||0});
     try{await dirCall({action:'setGrid',rows});toast('Grille publiée');dirLoad()}catch(err){toast(err.message)}
