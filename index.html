@@ -1,0 +1,847 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+<script>window.__PWA__=true</script></head><body>
+<title>Elite Ventes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0a2aa6">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-column phone app — sticky brand header, scrolling view, fixed bottom tab bar with a raised "Vente" button */
+:root{
+  --brand:#0a2aa6; --brand-ink:#ffffff; --brand-soft:#e8ecfb;
+  --bg:#f3f5fb; --surface:#ffffff; --fg:#141a33; --muted:#5d6584; --line:#dde2f0;
+  --ok:#14804a; --ok-soft:#e3f4ea; --warn:#a45f00; --warn-soft:#fdf0db; --bad:#c0262d; --bad-soft:#fbe6e7;
+  --pts:#0a2aa6;
+  --f-display:"Poppins",ui-rounded,"Segoe UI",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --brand:#5b7cff; --brand-ink:#ffffff; --brand-soft:#1c2550;
+  --bg:#0c1022; --surface:#161b33; --fg:#e9ecf8; --muted:#9aa2c3; --line:#2a3152;
+  --ok:#4fd08b; --ok-soft:#123326; --warn:#f2b84b; --warn-soft:#3a2c10; --bad:#ff7a7f; --bad-soft:#3d1719; --pts:#8ea4ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --brand:#5b7cff; --brand-ink:#ffffff; --brand-soft:#1c2550;
+  --bg:#0c1022; --surface:#161b33; --fg:#e9ecf8; --muted:#9aa2c3; --line:#2a3152;
+  --ok:#4fd08b; --ok-soft:#123326; --warn:#f2b84b; --warn-soft:#3a2c10; --bad:#ff7a7f; --bad-soft:#3d1719; --pts:#8ea4ff; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:#0a2aa6}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:#0a2aa6;color:#fff;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px}
+.top-row{display:flex;align-items:center;gap:10px;max-width:720px;margin:0 auto}
+.logo{width:34px;height:34px;flex:none}
+.who{flex:1;min-width:0}
+.who b{font-family:var(--f-display);font-weight:600;font-size:16px;display:block;line-height:1.1}
+.who small{opacity:.8;font-size:12px}
+.net{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:4px 8px;border-radius:99px;background:rgba(255,255,255,.16);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.net i{width:7px;height:7px;border-radius:50%;background:#5ce39a;display:block}
+.net.off i{background:#ffb74a}
+.icon-btn{background:rgba(255,255,255,.14);border:0;color:#fff;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;position:relative;flex:none}
+.icon-btn svg{width:20px;height:20px}
+.badge{position:absolute;top:-4px;right:-4px;background:#ff4d5a;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:grid;place-items:center;padding:0 4px}
+
+main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 110px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.sec-title{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:6px 2px -4px}
+
+/* points hero */
+.hero{background:linear-gradient(160deg,#0a2aa6,#0d1f74);color:#fff;border:0;padding:18px}
+.hero .lbl{font-size:12px;opacity:.85;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.hero .big{font-family:var(--f-display);font-size:44px;font-weight:700;line-height:1;margin-top:6px}
+.hero .big small{font-size:16px;font-weight:500;opacity:.8}
+.bar{height:10px;background:rgba(255,255,255,.18);border-radius:99px;overflow:hidden;margin-top:12px;position:relative}
+.bar span{display:block;height:100%;background:#fff;border-radius:99px}
+.bar em{position:absolute;top:0;height:100%;background:rgba(255,255,255,.45)}
+.hero-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.hero-grid div{background:rgba(255,255,255,.1);border-radius:10px;padding:8px 10px}
+.hero-grid b{display:block;font-family:var(--f-display);font-size:18px}
+.hero-grid small{font-size:11px;opacity:.85}
+.month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.month-nav button{background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:8px;width:30px;height:30px}
+
+/* traffic light */
+.feux{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.feu{border-radius:10px;padding:10px;background:var(--bg);border:1px solid var(--line)}
+.feu .dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
+.feu b{display:block;font-size:17px;font-family:var(--f-display);margin-top:2px}
+.feu small{color:var(--muted);font-size:11.5px}
+.g{background:var(--ok)} .y{background:var(--warn)} .r{background:var(--bad)}
+
+/* rows */
+.rows{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .main{flex:1;min-width:0}
+.row .main b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .main small{color:var(--muted);font-size:12.5px}
+.row .end{text-align:right;flex:none}
+.row .end b{font-family:var(--f-display);font-weight:600}
+.row.tap{cursor:pointer}
+.pts{color:var(--pts);font-weight:700}
+.mini-bar{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:5px}
+.mini-bar span{display:block;height:100%;background:var(--brand)}
+.mini-bar span.done{background:var(--ok)}
+
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:99px;white-space:nowrap}
+.c-ok{background:var(--ok-soft);color:var(--ok)} .c-warn{background:var(--warn-soft);color:var(--warn)} .c-bad{background:var(--bad-soft);color:var(--bad)} .c-info{background:var(--brand-soft);color:var(--pts)} .c-mute{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+
+/* controls */
+.seg{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.seg button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 12px;font-size:13px;font-weight:500;white-space:nowrap}
+.seg button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.seg button .n{opacity:.7;margin-left:4px}
+.search{width:100%;padding:11px 12px;border:1px solid var(--line);background:var(--surface);border-radius:10px}
+.btn{border:0;border-radius:10px;padding:12px 16px;font-weight:600;background:var(--brand);color:#fff}
+.btn.sec{background:var(--brand-soft);color:var(--pts)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.btn.okb{background:var(--ok);color:#fff}
+.btn.sm{padding:7px 11px;font-size:13px;border-radius:8px}
+.btn:disabled{opacity:.45}
+.full{width:100%}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--muted);font-weight:500}
+label.f input,label.f select,label.f textarea{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font-size:15px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.hstack{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:26px 10px}
+
+/* stepper */
+.step{display:flex;align-items:center;gap:6px}
+.step button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--surface);font-size:18px;font-weight:600}
+.step input{width:46px;text-align:center;padding:6px 0;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-weight:600}
+.prod.has{background:var(--brand-soft);margin:0 -14px;padding-inline:14px}
+
+/* pay choice */
+.choice{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.choice button{border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 6px;font-weight:600;font-size:14px}
+.choice button.on{border-color:var(--brand);background:var(--brand-soft);color:var(--pts)}
+.choice2{grid-template-columns:1fr 1fr}
+
+.total-bar{position:sticky;bottom:calc(76px + env(safe-area-inset-bottom,0px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(10,20,60,.12)}
+.total-bar .main{flex:1}
+.total-bar b{font-family:var(--f-display);font-size:18px}
+
+/* tab bar */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);align-items:end}
+nav.tabs button{background:none;border:0;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--muted);font-weight:500;position:relative}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button.on{color:var(--pts)}
+nav.tabs button.sell .plus{width:52px;height:52px;border-radius:16px;background:#0a2aa6;color:#fff;display:grid;place-items:center;margin-top:-22px;box-shadow:0 6px 16px rgba(10,42,166,.35)}
+nav.tabs button .badge{top:2px;right:calc(50% - 22px)}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(8,12,30,.5);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:720px;max-height:92%;overflow:auto;border-radius:18px 18px 0 0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 2px}
+.sheet-head{display:flex;align-items:flex-start;gap:10px}
+.sheet-head h2{flex:1;font-size:20px}
+.close{background:var(--surface);border:1px solid var(--line);width:34px;height:34px;border-radius:9px;font-size:18px}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kv div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.kv b{display:block;font-family:var(--f-display);font-size:16px}
+.kv small{color:var(--muted);font-size:11.5px}
+.phone{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phone code{font-size:15px;font-weight:600;background:var(--surface);border:1px solid var(--line);padding:6px 10px;border-radius:8px;user-select:all}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));background:#141a33;color:#fff;padding:10px 16px;border-radius:10px;z-index:60;font-size:14px;max-width:calc(100% - 32px)}
+
+/* alerts */
+.alert{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+.alert:first-child{border-top:0}
+.alert .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:none}
+.alert .ic svg{width:18px;height:18px}
+.alert .main{flex:1;min-width:0}
+.alert .main b{display:block;font-weight:600}
+.alert .main small{color:var(--muted);font-size:12.5px}
+
+/* setup */
+.setup{min-height:100%;display:flex;flex-direction:column;justify-content:center;gap:16px;max-width:460px;margin:0 auto;padding-block:30px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.setup .brandmark{display:flex;align-items:center;gap:12px}
+.setup .brandmark svg{width:56px;height:56px}
+.setup h1{font-size:26px}
+.vend-list{display:grid;gap:8px}
+.vend-list button{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;font-weight:600;text-align:left}
+.vend-list button small{color:var(--muted);font-weight:400}
+.vend-list button.on{border-color:var(--brand);background:var(--brand-soft);color:var(--pts)}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.6}}}
+@media (max-width:380px){.hero .big{font-size:38px}.kv,.hero-grid{grid-template-columns:1fr 1fr}}
+</style>
+
+<div id="app"></div>
+
+<script id="seed" type="application/json">{"products": [{"id": "castrol", "name": "Castrol", "pts": 18, "price": 11000, "stock": 14, "combo": 40}, {"id": "multi40", "name": "Multi 40", "pts": 16, "price": 11250, "stock": 18, "combo": 20}, {"id": "mobil", "name": "Mobil", "pts": 12, "price": 10000, "stock": 22.5, "combo": 0}, {"id": "ursahd40", "name": "Ursa HD 40", "pts": 11, "price": 9000, "stock": 45, "combo": 0}, {"id": "rallye4t", "name": "Rallye 4T", "pts": 10, "price": 9500, "stock": 25, "combo": 75}, {"id": "ursa15w40", "name": "Ursa 15W40", "pts": 10, "price": 9750, "stock": 8, "combo": 15}, {"id": "over40", "name": "Over all 40", "pts": 8, "price": 5500, "stock": 10, "combo": 0}, {"id": "over2t", "name": "Over all 2T", "pts": 8, "price": 5500, "stock": 40, "combo": 50}, {"id": "american40", "name": "American Gold 40", "pts": 8, "price": 6500, "stock": 16, "combo": 0}, {"id": "ursaqt", "name": "Ursa 40 ¼ (qt)", "pts": 8, "price": 9000, "stock": 0, "combo": 0}, {"id": "havoline40", "name": "Havoline 40", "pts": 8, "price": 9000, "stock": 33, "combo": 0}, {"id": "motext", "name": "Motex-T", "pts": 5, "price": 7250, "stock": 242, "combo": 0}, {"id": "havoline10w30", "name": "Havoline 10W30", "pts": 5, "price": 9250, "stock": 1, "combo": 0}, {"id": "atf", "name": "Supers ATF", "pts": 3, "price": 4500, "stock": 4, "combo": 0}, {"id": "dot3", "name": "Supers DOT-3", "pts": 0, "price": 3500, "stock": 9, "combo": 0}]}</script>
+<script>
+"use strict";
+/* ====== Elite Ventes — app de vente par points, hors ligne d'abord ====== */
+const KEY='elite.ventes.v1';
+// Serveur Elite Ventes (Supabase). La clé publique permet seulement d'AJOUTER des ventes et de lire la grille.
+const SERVER_URL='https://cmikhroxqbdcwtbjahpw.supabase.co';
+const SERVER_KEY='sb_publishable_hU3P29zbwFuZYy8wP_t8uA_d2BP8RzA';
+const DIR_KEY='elite.direction.v1';
+const SEED=JSON.parse(document.getElementById('seed').textContent);
+const DAY=864e5;
+const LOGO='<svg viewBox="0 0 64 64" class="logo" aria-hidden="true"><circle cx="32" cy="32" r="31" fill="#fff"/><g fill="#0a2aa6"><path d="M32 9l3.2 4.6 5.4-1.4.9 5.5 5.3 1.9-1.6 5.3 3.9 4-4 3.4"/><path d="M14.5 33a17.5 17.5 0 0 1 33.4-7.3l-4.4 2a12.7 12.7 0 0 0-24.2 3.4h24.4v4.6H19.3a12.7 12.7 0 0 0 22 6.4l3.6 3.1A17.5 17.5 0 0 1 14.5 33z"/></g></svg>';
+const I={
+ home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
+ users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>',
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+ box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
+ bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg>',
+ gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+ phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2"/></svg>',
+ drop:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>',
+ truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2zM13 10h5l3 3v3h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+ cash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
+ cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+};
+
+/* ---------- utils ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Math.round(n).toLocaleString('fr-FR').replace(/ | /g,' ');
+const fq=n=>Number.isInteger(n)?String(n):String(Math.round(n*10)/10).replace('.',',');
+const iso=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')};
+const today=()=>iso(new Date());
+const parse=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const days=(a,b)=>Math.round((parse(b)-parse(a))/DAY);
+const addDays=(s,n)=>iso(parse(s).getTime()+n*DAY);
+const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const MC=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const dShort=s=>{const d=parse(s);return d.getDate()+' '+MC[d.getMonth()]};
+const uid=()=>(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+const ago=n=>n<=0?"aujourd'hui":n===1?'hier':'il y a '+n+' j';
+
+/* ---------- store (localStorage, hors ligne) ---------- */
+let S=null, mem=null;
+function load(){try{const t=localStorage.getItem(KEY);if(t)return JSON.parse(t)}catch(e){}return mem}
+function save(){mem=S;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+// Le portefeuille (clients + historique) vient du serveur après le PIN : aucune donnée client dans le code publié.
+function init(vendor,pf){
+  S={v:2,vendor,created:new Date().toISOString(),
+    products:SEED.products.map(p=>({...p})),
+    objectives:{'2026-11':1900,'2026-12':1900,'2027-01':2150,'2027-02':2400},defaultObjective:1900,
+    clients:(pf.clients||[]).map(c=>({...c,logs:[],next:null})),
+    orders:(pf.orders||[]).map(o=>({...o,paidAt:o.pay==='cash'?o.date:o.paidAt})),
+    visitsPlanned:{},outbox:[],sync:{url:SERVER_URL,key:SERVER_KEY,last:null},seen:{}};
+  save();
+}
+function op(type,payload){S.outbox.push({id:uid(),vendor:S.vendor,type,payload,at:new Date().toISOString()});save();trySync()}
+const P=id=>S.products.find(p=>p.id===id)||{name:id,pts:0,price:0};
+const C=id=>S.clients.find(c=>c.id===id);
+
+/* ---------- règles de points ---------- */
+// Les points comptent seulement si la vente est payée dans les 14 jours (plan, p. 10).
+const DELAI=14;
+function orderPts(o){return o.lines.reduce((s,l)=>s+l.qty*(l.pts??P(l.pid).pts),0)}
+function orderAmt(o){return o.lines.reduce((s,l)=>s+l.qty*(l.price||P(l.pid).price),0)}
+function orderCases(o){return o.lines.reduce((s,l)=>s+l.qty,0)}
+function ptsState(o){
+  if(o.status==='annulee')return 'annulee';
+  if(o.paidAt) return days(o.date,o.paidAt)<=DELAI?'valide':'perdu';
+  return days(o.date,today())<=DELAI?'attente':'perdu';
+}
+function monthStats(ym){
+  const os=S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee');
+  const r={valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},orders:os.length};
+  os.forEach(o=>{const st=ptsState(o),p=orderPts(o);r[st]+=p;r.cases+=orderCases(o);r.amt+=orderAmt(o);
+    o.lines.forEach(l=>{const b=r.byP[l.pid]||(r.byP[l.pid]={q:0,pts:0});b.q+=l.qty;b.pts+=l.qty*(l.pts??P(l.pid).pts)})});
+  return r;
+}
+const objective=ym=>S.objectives[ym]??S.defaultObjective;
+
+/* ---------- CRM : analyse client ---------- */
+function clientInfo(c){
+  const os=S.orders.filter(o=>o.cid===c.id&&o.status!=='annulee').sort((a,b)=>a.date<b.date?-1:1);
+  const dates=[...new Set(os.map(o=>o.date))];
+  const last=dates[dates.length-1]||null;
+  let freq=null;
+  if(dates.length>=2){const gaps=[];for(let i=1;i<dates.length;i++)gaps.push(days(dates[i-1],dates[i]));
+    gaps.sort((a,b)=>a-b);freq=Math.max(5,gaps[Math.floor(gaps.length/2)]);}
+  const since=last?days(last,today()):null;
+  const credit=os.filter(o=>o.pay==='credit'&&!o.paidAt).reduce((s,o)=>s+orderAmt(o),0);
+  const basket={};os.forEach(o=>o.lines.forEach(l=>basket[l.pid]=(basket[l.pid]||0)+l.qty));
+  const top=Object.entries(basket).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const cases=os.reduce((s,o)=>s+orderCases(o),0);
+  const pts=os.reduce((s,o)=>s+(ptsState(o)==='valide'?orderPts(o):0),0);
+  const lastLog=c.logs&&c.logs.length?c.logs[c.logs.length-1]:null;
+  return {os,last,freq,since,credit,top,cases,pts,lastLog,n:dates.length};
+}
+// Génère toutes les alertes du vendeur
+function alerts(){
+  const t=today(),A=[];
+  S.clients.forEach(c=>{
+    const k=clientInfo(c);
+    const contacted=k.lastLog?days(k.lastLog.date,t):999;
+    if(c.next&&c.next<=t){A.push({kind:'relance',lvl:'warn',cid:c.id,title:c.name,text:'Relance prévue '+(c.next===t?"aujourd'hui":'depuis le '+dShort(c.next)),sort:1});return}
+    if(k.last&&k.freq&&contacted>2){
+      const ratio=k.since/k.freq;
+      if(ratio>=0.85&&ratio<2){A.push({kind:'stock',lvl:ratio>=1.2?'bad':'warn',cid:c.id,title:c.name,text:'Stock probablement terminé : achète tous les ~'+k.freq+' j, dernière commande '+ago(k.since),sort:ratio>=1.2?0:2});return}
+      if(ratio>=2){A.push({kind:'relance',lvl:'bad',cid:c.id,title:c.name,text:'Client inactif : aucune commande depuis '+k.since+' j (habitude : '+k.freq+' j)',sort:3});return}
+    }
+    if(k.last&&!k.freq&&k.since>=30&&contacted>7){A.push({kind:'relance',lvl:'warn',cid:c.id,title:c.name,text:'Une seule commande, '+ago(k.since)+'. À relancer pour une 2e commande',sort:4});return}
+    if(c.status==='prospect'&&contacted>7){A.push({kind:'relance',lvl:'info',cid:c.id,title:c.name,text:'Prospect'+(c.note?' · '+c.note:'')+(k.lastLog?' · dernier contact '+ago(contacted):' · jamais contacté dans l\'app'),sort:6})}
+  });
+  S.orders.filter(o=>o.status==='attente').forEach(o=>A.push({kind:'commande',lvl:'warn',oid:o.id,cid:o.cid,title:(C(o.cid)||{}).name||'Client',text:'Commande en attente de livraison · '+fq(orderCases(o))+' caisses · '+dShort(o.date),sort:0.5}));
+  S.orders.filter(o=>o.pay==='credit'&&!o.paidAt&&o.status!=='annulee').forEach(o=>{
+    const d=days(o.date,t),left=DELAI-d;
+    if(left<=4&&left>=0)A.push({kind:'credit',lvl:'bad',oid:o.id,cid:o.cid,title:(C(o.cid)||{}).name||'Client',text:fmt(orderAmt(o))+' HTG à encaisser · '+(left===0?"dernier jour":left+' j restants')+' pour garder '+orderPts(o)+' pts',sort:0.2});
+  });
+  return A.sort((a,b)=>a.sort-b.sort);
+}
+
+/* ---------- synchronisation (optionnelle) ---------- */
+let syncing=false;
+function srvHeaders(key){const h={'apikey':key,'Content-Type':'application/json'};if(!/^sb_/.test(key))h.Authorization='Bearer '+key;return h}
+// Récupère la grille des points et les objectifs publiés par la Direction
+async function pullConfig(force){
+  if(!S||!navigator.onLine||!S.sync.url||!S.sync.key)return;
+  if(!force&&S.sync.pulled&&Date.now()-S.sync.pulled<5*60e3)return;
+  try{
+    const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
+    const [g,o]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,sort&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points',{headers:h})]);
+    if(!g.ok||!o.ok)return;
+    const rows=await g.json(),objs=await o.json();
+    if(Array.isArray(rows)&&rows.length){
+      const act=new Set(rows.map(r=>r.id));
+      rows.forEach(r=>{const p=S.products.find(x=>x.id===r.id);const v={id:r.id,name:r.name,pts:+r.pts,price:+r.price,combo:+r.combo,stock:+r.stock,sort:+r.sort,active:true};if(p)Object.assign(p,v);else S.products.push(v)});
+      S.products.forEach(p=>{if(!act.has(p.id))p.active=false});
+    }
+    if(Array.isArray(objs))objs.forEach(x=>S.objectives[x.ym]=+x.points);
+    S.sync.pulled=Date.now();save();if(document.getElementById('view'))renderView();
+  }catch(e){}
+}
+async function trySync(){
+  pullConfig(false);
+  if(syncing||!navigator.onLine||!S||!S.sync.url||!S.sync.key||!S.outbox.length)return;
+  syncing=true;
+  try{
+    const batch=S.outbox.slice(0,200);
+    const res=await fetch(S.sync.url.replace(/\/$/,'')+'/rest/v1/operations',{method:'POST',
+      headers:{...srvHeaders(S.sync.key),'Prefer':'resolution=ignore-duplicates,return=minimal'},
+      body:JSON.stringify(batch.map(b=>({id:b.id,vendor:b.vendor,type:b.type,payload:b.payload,created_at:b.at})))});
+    if(res.ok){const ids=new Set(batch.map(b=>b.id));S.outbox=S.outbox.filter(b=>!ids.has(b.id));S.sync.last=new Date().toISOString();S.sync.err=null;save()}
+    else{S.sync.err='Erreur serveur '+res.status;save()}
+  }catch(e){S.sync.err='Serveur injoignable';save()}
+  syncing=false;renderTop();
+  if(S.outbox.length&&!S.sync.err)setTimeout(trySync,500);
+}
+addEventListener('online',()=>{renderTop();trySync()});
+addEventListener('offline',renderTop);
+
+/* ---------- UI state ---------- */
+let tab='home', ym=today().slice(0,7), cFilter='alerte', cQuery='', oFilter='attente';
+let cart=null;
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2400)}
+
+let route='app';
+function render(){
+  const app=$('#app');
+  if(route==='dir'){app.innerHTML=dirShell();dirRender();return}
+  if(!S){app.innerHTML=setupView();return}
+  app.innerHTML='<header class="top" id="top"></header><main id="view"></main>'+tabsView();
+  renderTop();renderView();
+}
+function renderTop(){
+  const el=$('#top');if(!el||!S)return;
+  const on=navigator.onLine,n=alerts().length,pend=S.outbox.length;
+  const syncTxt=!S.sync.url?(on?'En ligne':'Hors ligne'):(pend?pend+' à envoyer':(on?'Synchronisé':'Hors ligne'));
+  el.innerHTML=`<div class="top-row">${LOGO}<div class="who"><b>${esc(S.vendor)}</b><small>Elite Auto Parts · Ventes</small></div>
+   <span class="net ${on?'':'off'}" title="${esc(S.sync.err||'')}"><i></i>${syncTxt}</span>
+   <button class="icon-btn" data-act="settings" aria-label="Paramètres">${I.gear}</button></div>`;
+  const b=document.querySelector('nav.tabs [data-tab="alerts"] .badge');
+  if(b){b.textContent=n;b.hidden=!n}
+}
+function tabsView(){
+  const t=(id,lab,ic,extra='')=>`<button data-tab="${id}" class="${tab===id?'on':''} ${extra}">${ic}<span>${lab}</span>${id==='alerts'?'<span class="badge" hidden></span>':''}</button>`;
+  return `<nav class="tabs"><div class="in">${t('home','Accueil',I.home)}${t('clients','Clients',I.users)}
+  <button data-tab="sell" class="sell ${tab==='sell'?'on':''}"><span class="plus">${I.plus}</span><span>Vente</span></button>
+  ${t('orders','Commandes',I.box)}${t('alerts','Alertes',I.bell)}</div></nav>`;
+}
+function renderView(){
+  const v=$('#view');
+  v.innerHTML=({home:homeView,clients:clientsView,sell:sellView,orders:ordersView,alerts:alertsView})[tab]();
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  renderTop();
+}
+
+/* ---------- setup ---------- */
+let setup={vendors:null,pick:null,err:null,busy:false};
+async function loadVendors(){
+  try{const r=await fetch(SERVER_URL+'/rest/v1/vendeurs?select=name&order=name',{headers:srvHeaders(SERVER_KEY)});if(r.ok){setup.vendors=(await r.json()).map(x=>x.name);setup.err=null}else setup.err='Serveur indisponible ('+r.status+')'}
+  catch(e){setup.err='Pas de connexion internet. La première ouverture a besoin d\'internet pour télécharger ton portefeuille.'}
+  if(!S&&route==='app')render();
+}
+async function login(){
+  const pin=($('#pin').value||'').trim();if(!pin){setup.err='Entre ton PIN';render();return}
+  setup.busy=true;setup.err=null;render();
+  try{
+    const r=await fetch(SERVER_URL+'/functions/v1/portefeuille',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({vendor:setup.pick,pin})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||('Erreur '+r.status));
+    init(j.vendor,j);setup={vendors:setup.vendors,pick:null,err:null,busy:false};render();pullConfig(true);
+    toast(S.clients.length+' clients téléchargés');
+  }catch(e){setup.busy=false;setup.err=navigator.onLine?e.message:'Pas de connexion internet';render()}
+}
+function setupView(){
+  if(!setup.vendors&&!setup.err)loadVendors();
+  const list=setup.vendors?setup.vendors.map(v=>`<button data-act="pick" data-v="${esc(v)}" class="${setup.pick===v?'on':''}">${esc(v)}<small>${setup.pick===v?'choisi':''}</small></button>`).join(''):`<div class="muted">${setup.err?'':'Chargement des vendeurs…'}</div>`;
+  return `<div class="setup"><div class="brandmark">${LOGO.replace('class="logo"','')}<div><h1>Elite Ventes</h1><div class="muted">Points, clients et ventes, même sans internet</div></div></div>
+  <div class="card stack"><b>Qui utilise ce téléphone ?</b>
+  <div class="vend-list">${list}</div>
+  ${setup.pick?`<label class="f">PIN de ${esc(setup.pick)}<input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+  <button class="btn" data-act="login" ${setup.busy?'disabled':''}>${setup.busy?'Téléchargement…':'Ouvrir mon portefeuille'}</button>`:''}
+  ${setup.err?`<span style="color:var(--bad)">${esc(setup.err)}</span>${!setup.vendors?'<button class="btn sec" data-act="retryv">Réessayer</button>':''}`:''}</div>
+  <button class="btn ghost" data-act="godir">Espace Direction (Steve, Abenson, Gesmane)</button>
+  <p class="muted" style="font-size:12.5px;margin:0">Les données sont gardées sur le téléphone. Après la première ouverture, l'app marche sans internet. Les ventes partent au serveur dès que la connexion revient.</p></div>`;
+}
+
+/* ---------- Accueil ---------- */
+function homeView(){
+  const st=monthStats(ym),obj=objective(ym),pct=Math.min(100,st.valide/obj*100),pctAll=Math.min(100,(st.valide+st.attente)/obj*100);
+  const [y,m]=ym.split('-').map(Number);const isCur=ym===today().slice(0,7);
+  const daysInM=new Date(y,m,0).getDate(),dayN=isCur?new Date().getDate():daysInM;
+  const t=today();
+  const todayPts=S.orders.filter(o=>o.date===t&&o.status!=='annulee').reduce((s,o)=>s+orderPts(o),0);
+  const perDay=Math.round(obj/26);
+  const visits=S.clients.reduce((s,c)=>s+(c.logs||[]).filter(l=>l.date===t&&l.type==='Visite').length,0)+new Set(S.orders.filter(o=>o.date===t).map(o=>o.cid)).size;
+  const planned=S.visitsPlanned[t]||0;
+  const late=S.orders.filter(o=>o.pay==='credit'&&!o.paidAt&&o.status!=='annulee'&&days(o.date,t)>DELAI);
+  const lateMax=late.reduce((m,o)=>Math.max(m,days(o.date,t)-DELAI),0);
+  const f1=todayPts>=perDay?'g':todayPts>=perDay*0.7?'y':'r';
+  const f2=!planned?null:visits/planned>=0.9?'g':visits/planned>=0.7?'y':'r';
+  const f3=!late.length?'g':lateMax<7?'y':'r';
+  const rank={g:0,y:1,r:2};const worst=[f1,f2,f3].filter(Boolean).reduce((a,b)=>rank[b]>rank[a]?b:a,'g');
+  const feuName={g:'Vert',y:'Jaune',r:'Rouge'};
+  // combinaison A
+  const combo=S.products.filter(p=>p.combo>0&&p.active!==false);
+  const comboRows=combo.map(p=>{const q=(st.byP[p.id]||{q:0}).q,pc=Math.min(100,q/p.combo*100);
+    return `<div class="row"><div class="main"><b>${esc(p.name)}</b><div class="mini-bar"><span class="${q>=p.combo?'done':''}" style="width:${pc}%"></span></div></div><div class="end num"><b>${fq(q)}</b><small class="muted"> / ${p.combo}</small></div></div>`}).join('');
+  const prodRows=Object.entries(st.byP).sort((a,b)=>b[1].pts-a[1].pts).map(([id,b])=>`<div class="row"><div class="main"><b>${esc(P(id).name)}</b><small>${P(id).pts} pts / caisse</small></div><div class="end num"><b>${fq(b.q)}</b> <small class="muted">caisses</small><div class="pts">${fmt(b.pts)} pts</div></div></div>`).join('');
+  return `
+  <section class="card hero">
+    <div class="month-nav"><span class="lbl">Points ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="mprev" aria-label="Mois précédent">‹</button><button data-act="mnext" aria-label="Mois suivant" ${isCur?'disabled':''}>›</button></span></div>
+    <div class="big num">${fmt(st.valide)} <small>/ ${fmt(obj)} pts</small></div>
+    <div class="bar" aria-label="Progression objectif"><em style="width:${pctAll}%"></em><span style="width:${pct}%"></span></div>
+    <div class="hstack" style="justify-content:space-between;margin-top:6px;font-size:12.5px;opacity:.9"><span>${Math.round(st.valide/obj*100)} % de l'objectif</span><span>${isCur?'Jour '+dayN+' / '+daysInM:'Mois terminé'}</span></div>
+    <div class="hero-grid">
+      <div><b class="num">${fmt(st.attente)}</b><small>pts en attente de paiement</small></div>
+      <div><b class="num">${fq(st.cases)}</b><small>caisses vendues</small></div>
+      <div><b class="num">${fmt(st.perdu)}</b><small>pts perdus (payé après 14 j)</small></div>
+    </div>
+  </section>
+  ${isCur?`<div class="sec-title">Feu du jour</div>
+  <section class="card stack">
+    <div class="hstack" style="justify-content:space-between"><b>Couleur du jour : <span class="chip ${worst==='g'?'c-ok':worst==='y'?'c-warn':'c-bad'}">${feuName[worst]}</span></b><small class="muted">Objectif ≈ ${perDay} pts/jour</small></div>
+    <div class="feux">
+      <div class="feu"><small><span class="dot ${f1}"></span>Points du jour</small><b class="num">${fmt(todayPts)}</b><small>vert ≥ ${perDay}</small></div>
+      <div class="feu"><small><span class="dot ${f2||'c-mute'}" style="${f2?'':'background:var(--line)'}"></span>Visites</small><b class="num">${visits} / ${planned||'–'}</b>
+        <span class="step" style="margin-top:4px"><button data-act="vplan" data-d="-1" aria-label="Moins de visites prévues" style="width:26px;height:26px;font-size:15px">−</button><button data-act="vplan" data-d="1" aria-label="Plus de visites prévues" style="width:26px;height:26px;font-size:15px">+</button></span></div>
+      <div class="feu"><small><span class="dot ${f3}"></span>Encaissement</small><b class="num">${late.length}</b><small>${late.length?'crédit(s) > 14 j':'tout est à jour'}</small></div>
+    </div>
+  </section>`:''}
+  <div class="sec-title">Combinaison du mois</div>
+  <section class="card"><div class="rows">${comboRows}</div></section>
+  <div class="sec-title">Caisses vendues et points</div>
+  <section class="card"><div class="rows">${prodRows||'<div class="empty">Aucune vente ce mois.</div>'}</div></section>
+  <div class="sec-title">Grille des points du mois</div>
+  <section class="card"><div class="rows">${S.products.filter(p=>p.active!==false).sort((a,b)=>b.pts-a.pts).map(p=>`<div class="row"><div class="main"><b>${esc(p.name)}</b><small>${fmt(p.price)} HTG la caisse${p.combo?' · combinaison':''}</small></div><div class="end pts num">${p.pts} pts</div></div>`).join('')}</div></section>`;
+}
+
+/* ---------- Clients ---------- */
+function clientsView(){
+  const A=alerts(),alertIds=new Set(A.filter(a=>a.cid&&(a.kind==='stock'||a.kind==='relance')).map(a=>a.cid));
+  const info=new Map(S.clients.map(c=>[c.id,clientInfo(c)]));
+  const filters={alerte:c=>alertIds.has(c.id),tous:()=>true,credit:c=>info.get(c.id).credit>0,prospect:c=>c.status==='prospect'};
+  const counts=Object.fromEntries(Object.entries(filters).map(([k,f])=>[k,S.clients.filter(f).length]));
+  const q=cQuery.trim().toLowerCase();
+  let list=S.clients.filter(filters[cFilter]).filter(c=>!q||(c.name+' '+c.zone+' '+c.phone).toLowerCase().includes(q));
+  list.sort((a,b)=>{const ia=info.get(a.id),ib=info.get(b.id);return (ib.last||'')<(ia.last||'')?-1:(ib.last||'')>(ia.last||'')?1:a.name.localeCompare(b.name)});
+  const lab={alerte:'À suivre',tous:'Tous',credit:'Crédit ouvert',prospect:'Prospects'};
+  return `<div class="hstack"><input class="search" id="cq" type="search" placeholder="Chercher un client, une zone, un numéro" value="${esc(cQuery)}" style="flex:1"><button class="btn sec" data-act="newclient">+ Client</button></div>
+  <div class="seg">${Object.keys(filters).map(k=>`<button data-act="cf" data-f="${k}" class="${cFilter===k?'on':''}">${lab[k]}<span class="n">${counts[k]}</span></button>`).join('')}</div>
+  <section class="card"><div class="rows">${list.map(c=>clientRow(c,info.get(c.id),A)).join('')||'<div class="empty">Aucun client dans ce filtre.</div>'}</div></section>`;
+}
+function clientRow(c,k,A){
+  const a=A.find(x=>x.cid===c.id&&(x.kind==='stock'||x.kind==='relance'));
+  let chip='';
+  if(a)chip=`<span class="chip ${a.kind==='stock'?(a.lvl==='bad'?'c-bad':'c-warn'):a.lvl==='bad'?'c-bad':a.lvl==='info'?'c-info':'c-warn'}">${a.kind==='stock'?'Stock fini ?':c.status==='prospect'?'Prospect':'À relancer'}</span>`;
+  else if(c.status==='prospect')chip='<span class="chip c-info">Prospect</span>';
+  else chip='<span class="chip c-ok">Actif</span>';
+  return `<div class="row tap" data-act="client" data-id="${esc(c.id)}"><div class="main"><b>${esc(c.name)}</b><small>${esc(c.zone||'Zone ?')} · ${k.last?'dernière cde '+ago(k.since):'aucune commande'}${k.credit?' · <span style="color:var(--bad)">crédit '+fmt(k.credit)+'</span>':''}</small></div><div class="end">${chip}</div></div>`;
+}
+function clientSheet(id){
+  const c=C(id),k=clientInfo(c);
+  const logs=(c.logs||[]).slice().reverse();
+  openSheet(`<div class="sheet-head"><h2>${esc(c.name)}</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="hstack">${c.status==='prospect'?'<span class="chip c-info">Prospect</span>':'<span class="chip c-ok">Client</span>'}<span class="chip c-mute">${esc(c.zone||'Zone ?')}</span>${c.next?`<span class="chip c-warn">Relance le ${dShort(c.next)}</span>`:''}</div>
+  <div class="phone">${c.phone?c.phone.split('/').map(p=>`<code>${esc(p.trim())}</code><a class="btn sm sec" href="tel:${esc(p.trim())}">Appeler</a><a class="btn sm ghost" href="https://wa.me/509${esc(p.trim().replace(/\D/g,''))}" target="_blank" rel="noopener">WhatsApp</a>`).join(''):'<span class="muted">Pas de numéro</span>'}</div>
+  <div class="kv">
+    <div><b class="num">${k.last?ago(k.since):'—'}</b><small>dernière commande</small></div>
+    <div><b class="num">${k.freq?k.freq+' j':'—'}</b><small>achète tous les</small></div>
+    <div><b class="num">${fq(k.cases)}</b><small>caisses au total</small></div>
+    <div><b class="num">${k.n}</b><small>commandes</small></div>
+    <div><b class="num pts">${fmt(k.pts)}</b><small>pts gagnés</small></div>
+    <div><b class="num" style="${k.credit?'color:var(--bad)':''}">${fmt(k.credit)}</b><small>HTG crédit ouvert</small></div>
+  </div>
+  ${k.top.length?`<div class="card"><b>Panier habituel</b><div class="rows">${k.top.map(([pid,q])=>`<div class="row"><div class="main">${esc(P(pid).name)}</div><div class="end num">${fq(q)} caisses</div></div>`).join('')}</div></div>`:''}
+  <button class="btn full" data-act="sellto" data-id="${esc(c.id)}">Nouvelle vente pour ce client</button>
+  <div class="card stack"><b>Noter un suivi</b>
+    <div class="choice" id="ltype">${['Appel','Visite','WhatsApp'].map((t,i)=>`<button data-act="ltype" data-t="${t}" class="${i===1?'on':''}">${t}</button>`).join('')}</div>
+    <label class="f">Résultat<input id="lnote" placeholder="Ex. : rappelle vendredi, veut du Castrol"></label>
+    <label class="f">Prochaine relance<input id="lnext" type="date" value="${addDays(today(),7)}"></label>
+    <button class="btn sec" data-act="addlog" data-id="${esc(c.id)}">Enregistrer le suivi</button>
+  </div>
+  <div class="card"><b>Historique</b><div class="rows">${
+    [...logs.map(l=>({d:l.date,h:`<div class="row"><div class="main"><b>${esc(l.type)}</b><small>${esc(l.note||'')}</small></div><div class="end muted num">${dShort(l.date)}</div></div>`})),
+     ...k.os.slice().reverse().slice(0,12).map(o=>({d:o.date,h:orderRow(o,false)}))].sort((a,b)=>a.d<b.d?1:-1).map(x=>x.h).join('')||'<div class="empty">Rien pour le moment.</div>'}</div></div>
+  ${c.note?`<p class="muted" style="margin:0;font-size:13px">Note du fichier de suivi : ${esc(c.note)}</p>`:''}`);
+}
+
+/* ---------- Vente ---------- */
+function newCart(cid){return {cid:cid||null,q:{},pay:'cash',deliv:'livree',date:today(),note:''}}
+function sellView(){
+  if(!cart)cart=newCart();
+  const c=cart.cid?C(cart.cid):null;
+  const lines=Object.entries(cart.q).filter(([,q])=>q>0);
+  const amt=lines.reduce((s,[id,q])=>s+q*P(id).price,0),pts=lines.reduce((s,[id,q])=>s+q*P(id).pts,0),cases=lines.reduce((s,[,q])=>s+q,0);
+  const prods=S.products.filter(p=>p.active!==false).sort((a,b)=>(b.combo>0)-(a.combo>0)||b.pts-a.pts);
+  const k=c?clientInfo(c):null;
+  return `<h2 style="font-size:20px">Nouvelle vente</h2>
+  <section class="card stack">
+    ${c?`<div class="hstack"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b><div class="muted" style="font-size:12.5px">${esc(c.zone||'')}${k.credit?' · crédit ouvert '+fmt(k.credit)+' HTG':''}</div></div><button class="btn sm ghost" data-act="pickclient">Changer</button></div>`
+      :`<button class="btn sec full" data-act="pickclient">Choisir le client</button>`}
+    ${k&&k.top.length?`<div class="hstack" style="font-size:12.5px"><span class="muted">Habituel :</span>${k.top.map(([pid])=>`<button class="chip c-info" style="border:0" data-act="addq" data-id="${pid}" data-d="1">+ ${esc(P(pid).name)}</button>`).join('')}</div>`:''}
+  </section>
+  <section class="card"><div class="rows">${prods.map(p=>{const q=cart.q[p.id]||0;return `<div class="row prod ${q?'has':''}"><div class="main"><b>${esc(p.name)}${p.combo?' <span class="chip c-info" style="font-size:10.5px">combinaison</span>':''}</b><small><span class="pts">${p.pts} pts</span> · ${fmt(p.price)} HTG${p.stock<=0?' · <span style="color:var(--bad)">rupture dépôt</span>':p.stock<5?' · <span style="color:var(--warn)">'+fq(p.stock)+' en dépôt</span>':''}</small></div>
+    <div class="step"><button data-act="addq" data-id="${p.id}" data-d="-1" aria-label="Retirer une caisse">−</button><input inputmode="decimal" data-qin="${p.id}" value="${q||''}" placeholder="0" aria-label="Caisses ${esc(p.name)}"><button data-act="addq" data-id="${p.id}" data-d="1" aria-label="Ajouter une caisse">+</button></div></div>`}).join('')}</div></section>
+  <section class="card stack">
+    <b>Paiement</b>
+    <div class="choice">${[['cash','Cash'],['moncash','MonCash'],['credit','Crédit']].map(([v,l])=>`<button data-act="pay" data-v="${v}" class="${cart.pay===v?'on':''}">${l}</button>`).join('')}</div>
+    ${cart.pay==='credit'?`<p class="muted" style="margin:0;font-size:13px">Les ${pts} pts restent « en attente » et comptent seulement si le client paie avant le ${dShort(addDays(cart.date,DELAI))}.</p>`:''}
+    <b>Livraison</b>
+    <div class="choice choice2">${[['livree','Livrée maintenant'],['attente','Commande à livrer']].map(([v,l])=>`<button data-act="deliv" data-v="${v}" class="${cart.deliv===v?'on':''}">${l}</button>`).join('')}</div>
+    <div class="grid2"><label class="f">Date<input type="date" id="cdate" value="${cart.date}"></label><label class="f">Note<input id="cnote" value="${esc(cart.note)}" placeholder="Optionnel"></label></div>
+  </section>
+  <div class="total-bar"><div class="main"><b class="num">${fmt(amt)} HTG</b><div class="muted num" style="font-size:12.5px">${fq(cases)} caisses · <span class="pts">${fmt(pts)} pts</span></div></div>
+  <button class="btn" data-act="savesale" ${!c||!cases?'disabled':''}>Enregistrer</button></div>`;
+}
+function pickClientSheet(){
+  openSheet(`<div class="sheet-head"><h2>Choisir le client</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <input class="search" id="pq" type="search" placeholder="Nom ou zone">
+  <div class="card"><div class="rows" id="plist">${pickList('')}</div></div>
+  <button class="btn sec" data-act="newclient">+ Nouveau client</button>`);
+  setTimeout(()=>{const i=$('#pq');i&&i.focus()},50);
+}
+function pickList(q){q=q.toLowerCase();return S.clients.filter(c=>!q||(c.name+' '+c.zone).toLowerCase().includes(q)).slice(0,60).map(c=>`<div class="row tap" data-act="pickc" data-id="${esc(c.id)}"><div class="main"><b>${esc(c.name)}</b><small>${esc(c.zone||'')}</small></div></div>`).join('')||'<div class="empty">Aucun résultat.</div>'}
+
+/* ---------- Commandes ---------- */
+function orderRow(o,actions=true){
+  const st=ptsState(o),c=C(o.cid);
+  const chip={valide:'<span class="chip c-ok">Points validés</span>',attente:'<span class="chip c-warn">Pts en attente</span>',perdu:'<span class="chip c-bad">Pts perdus</span>',annulee:'<span class="chip c-mute">Annulée</span>'}[st];
+  const left=DELAI-days(o.date,today());
+  const pay={cash:'Cash',moncash:'MonCash',credit:'Crédit'}[o.pay];
+  let act='';
+  if(actions){
+    if(o.status==='attente')act+=`<button class="btn sm okb" data-act="deliver" data-id="${o.id}">Livrée</button> `;
+    if(o.pay==='credit'&&!o.paidAt&&o.status!=='annulee')act+=`<button class="btn sm" data-act="paid" data-id="${o.id}">Payé</button>`;
+  }
+  return `<div class="row"><div class="main"><b>${actions?esc(c?c.name:'Client'):dShort(o.date)+' · '+pay}</b>
+   <small>${actions?dShort(o.date)+' · '+pay+' · ':''}${o.lines.map(l=>fq(l.qty)+' '+esc(P(l.pid).name)).join(', ')}</small>
+   <div class="hstack" style="margin-top:4px">${chip}${o.status==='attente'?'<span class="chip c-warn">À livrer</span>':''}${o.pay==='credit'&&!o.paidAt&&st==='attente'?`<span class="chip c-mute">${left} j pour payer</span>`:''}${o.src==='hist'?'':'<span class="chip c-mute">Saisie app</span>'}</div>
+   ${act?`<div class="hstack" style="margin-top:6px">${act}</div>`:''}</div>
+   <div class="end num"><b>${fmt(orderAmt(o))}</b><div class="pts" style="font-size:13px">${fmt(orderPts(o))} pts</div></div></div>`;
+}
+function ordersView(){
+  const t=today();
+  const F={attente:o=>o.status==='attente',credit:o=>o.pay==='credit'&&!o.paidAt&&o.status!=='annulee',mois:o=>o.date.slice(0,7)===t.slice(0,7),tout:()=>true};
+  const lab={attente:'À livrer',credit:'Crédits à encaisser',mois:'Ce mois',tout:'Tout'};
+  const list=S.orders.filter(F[oFilter]).sort((a,b)=>a.date<b.date?1:-1);
+  const credTot=S.orders.filter(F.credit).reduce((s,o)=>s+orderAmt(o),0);
+  return `<h2 style="font-size:20px">Commandes</h2>
+  <div class="seg">${Object.keys(F).map(k=>`<button data-act="of" data-f="${k}" class="${oFilter===k?'on':''}">${lab[k]}<span class="n">${S.orders.filter(F[k]).length}</span></button>`).join('')}</div>
+  ${oFilter==='credit'?`<div class="card hstack" style="justify-content:space-between"><span class="muted">Total à encaisser</span><b class="num" style="color:var(--bad)">${fmt(credTot)} HTG</b></div>`:''}
+  <section class="card"><div class="rows">${list.slice(0,150).map(o=>orderRow(o)).join('')||'<div class="empty">Rien ici.</div>'}</div></section>`;
+}
+
+/* ---------- Alertes ---------- */
+function alertsView(){
+  const A=alerts();
+  const ic={stock:[I.drop,'c-bad'],relance:[I.phone,'c-warn'],commande:[I.truck,'c-info'],credit:[I.cash,'c-bad']};
+  const groups=[['credit','Crédits : points en danger'],['commande','Nouvelles commandes en attente'],['stock','Stock client terminé'],['relance','Clients à relancer']];
+  const canNotify='Notification' in window&&Notification.permission!=='granted'&&Notification.permission!=='denied';
+  return `<h2 style="font-size:20px">Alertes</h2>
+  ${canNotify?`<div class="card hstack"><span style="flex:1">Recevoir ces alertes en notification sur le téléphone</span><button class="btn sm" data-act="notif">Activer</button></div>`:''}
+  ${groups.map(([k,l])=>{const g=A.filter(a=>a.kind===k);if(!g.length)return'';return `<div class="sec-title">${l} · ${g.length}</div><section class="card">${g.slice(0,40).map(a=>`<div class="alert row tap" data-act="${a.oid?'gorder':'client'}" data-id="${esc(a.oid?a.kind:a.cid)}" data-cid="${esc(a.cid||'')}"><div class="ic ${a.lvl==='bad'?'c-bad':a.lvl==='info'?'c-info':'c-warn'}">${ic[k][0]}</div><div class="main"><b>${esc(a.title)}</b><small>${esc(a.text)}</small></div></div>`).join('')}${g.length>40?`<div class="empty">+ ${g.length-40} autres dans l'onglet Clients</div>`:''}</section>`}).join('')||'<div class="empty card">Aucune alerte. Tout est à jour.</div>'}`;
+}
+
+/* ---------- Paramètres ---------- */
+function settingsSheet(){
+  const o=S.outbox.length;
+  openSheet(`<div class="sheet-head"><h2>Paramètres</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <button class="btn ghost" data-act="godir">Espace Direction</button>
+  <div class="card stack"><b>Synchronisation</b>
+   <p class="muted" style="margin:0;font-size:13px">Chaque vente, paiement ou suivi est gardé sur le téléphone, puis envoyé au serveur de la Direction dès qu'il y a internet. ${o} opération(s) en attente d'envoi.${S.sync.last?' Dernier envoi : '+new Date(S.sync.last).toLocaleString('fr-FR')+'.':''}${S.sync.err?' <span style="color:var(--bad)">'+esc(S.sync.err)+'</span>':''}</p>
+   <label class="f">Adresse du serveur<input id="surl" value="${esc(S.sync.url)}" placeholder="https://xxxx.supabase.co"></label>
+   <label class="f">Clé d'accès<input id="skey" value="${esc(S.sync.key)}" placeholder="clé publique (anon)"></label>
+   <button class="btn sec" data-act="savesync">Enregistrer et envoyer</button></div>
+  <div class="card stack"><b>Export pour la Direction</b>
+   <p class="muted" style="margin:0;font-size:13px">Lignes de vente au format de la « Liste Commande » (Auto Parts, Date, Vendeur, Article, Quantité, Mode paiement, Statut paiement), à coller dans Excel.</p>
+   <div class="hstack"><button class="btn sec" data-act="csv">Télécharger CSV</button><button class="btn ghost" data-act="csvcopy">Copier</button></div></div>
+  <div class="card stack"><b>Objectif du mois</b>
+   <label class="f">Objectif ${MOIS[+ym.slice(5)-1]} (points)<input id="obj" type="number" inputmode="numeric" value="${objective(ym)}"></label>
+   <button class="btn sec" data-act="saveobj">Enregistrer</button></div>
+  <div class="card stack"><b>Appareil</b><span class="muted" style="font-size:13px">Vendeur : ${esc(S.vendor)} · ${S.clients.length} clients · ${S.orders.length} commandes</span>
+   <button class="btn ghost" data-act="askreset">Changer de vendeur / effacer les données</button><div id="resetbox"></div></div>`);
+}
+function csvText(){
+  const rows=[['Auto Parts','Date Livraison','Vendeur','Article','Quantite','Statut Commande','Mode paiement','Statut Paiment','Prix Vente','Total Vente','Points']];
+  S.orders.filter(o=>o.src!=='hist').forEach(o=>o.lines.forEach(l=>rows.push([(C(o.cid)||{}).name||'',o.date,S.vendor,P(l.pid).name,l.qty,o.status==='attente'?'Attente':'Confirmé',{cash:'Cash',moncash:'MonCash',credit:'Crédit'}[o.pay],o.paidAt?'Payé':'',l.price,l.qty*l.price,l.qty*(l.pts??P(l.pid).pts)])));
+  return rows.map(r=>r.map(x=>/[;"\n]/.test(String(x))?'"'+String(x).replace(/"/g,'""')+'"':x).join(';')).join('\n');
+}
+
+/* ---------- sheet ---------- */
+function openSheet(html){closeSheet();const d=document.createElement('div');d.className='scrim';d.id='scrim';d.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;document.body.appendChild(d)}
+function closeSheet(){const s=$('#scrim');s&&s.remove()}
+function newClientSheet(){
+  openSheet(`<div class="sheet-head"><h2>Nouveau client</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="card stack"><label class="f">Nom de l'auto-parts<input id="nname"></label><label class="f">Téléphone<input id="nphone" inputmode="tel" placeholder="3xxx xxxx / 4xxx xxxx"></label>
+  <label class="f">Zone / adresse<input id="nzone"></label><label class="f">Statut<select id="nstat"><option value="prospect">Prospect</option><option value="client">Client</option></select></label>
+  <button class="btn" data-act="savenew">Ajouter</button></div>`);
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  if(e.target.id==='scrim'){closeSheet();return}
+  const t=e.target.closest('[data-act],[data-tab]');if(!t)return;
+  if(t.dataset.tab){tab=t.dataset.tab;closeSheet();renderView();scrollTo(0,0);return}
+  const a=t.dataset.act,id=t.dataset.id;
+  switch(a){
+    case 'pick':setup.pick=t.dataset.v;setup.err=null;render();setTimeout(()=>{const i=$('#pin');i&&i.focus()},50);break;
+    case 'login':login();break;
+    case 'retryv':setup.err=null;setup.vendors=null;render();break;
+    case 'settings':settingsSheet();break;
+    case 'close':closeSheet();break;
+    case 'mprev':{const [y,m]=ym.split('-').map(Number);const d=new Date(y,m-2,1);ym=iso(d).slice(0,7);renderView();break}
+    case 'mnext':{const [y,m]=ym.split('-').map(Number);const d=new Date(y,m,1);ym=iso(d).slice(0,7);renderView();break}
+    case 'vplan':{const k=today();S.visitsPlanned[k]=Math.max(0,(S.visitsPlanned[k]||0)+Number(t.dataset.d));save();renderView();break}
+    case 'cf':cFilter=t.dataset.f;renderView();break;
+    case 'of':oFilter=t.dataset.f;renderView();break;
+    case 'client':clientSheet(id||t.dataset.cid);break;
+    case 'gorder':oFilter=id==='credit'?'credit':'attente';tab='orders';renderView();break;
+    case 'sellto':cart=newCart(id);tab='sell';closeSheet();renderView();scrollTo(0,0);break;
+    case 'pickclient':pickClientSheet();break;
+    case 'pickc':cart.cid=id;closeSheet();renderView();break;
+    case 'addq':cart.q[id]=Math.max(0,(cart.q[id]||0)+Number(t.dataset.d));renderView();break;
+    case 'pay':cart.pay=t.dataset.v;renderView();break;
+    case 'deliv':cart.deliv=t.dataset.v;renderView();break;
+    case 'savesale':{
+      const lines=Object.entries(cart.q).filter(([,q])=>q>0).map(([pid,qty])=>({pid,qty,price:P(pid).price,pts:P(pid).pts}));
+      if(!cart.cid||!lines.length)return;
+      const date=$('#cdate').value||today();
+      const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString()};
+      S.orders.push(o);const c=C(cart.cid);if(c.status==='prospect'){c.status='client';op('client.update',{id:c.id,status:'client'})}
+      lines.forEach(l=>{const p=P(l.pid);if(o.status==='livree')p.stock=Math.max(0,p.stock-l.qty)});
+      op('vente.creee',o);
+      const pts=orderPts(o);cart=null;
+      toast(o.pay==='credit'?`Vente enregistrée · ${pts} pts en attente de paiement`:`Vente enregistrée · +${pts} pts`);
+      tab=o.status==='attente'?'orders':'home';if(tab==='orders')oFilter='attente';renderView();scrollTo(0,0);break}
+    case 'deliver':{const o=S.orders.find(x=>x.id===id);o.status='livree';o.deliveredAt=today();o.lines.forEach(l=>{const p=P(l.pid);p.stock=Math.max(0,p.stock-l.qty)});op('vente.livree',{id,at:o.deliveredAt});toast('Commande marquée livrée');renderView();break}
+    case 'paid':{const o=S.orders.find(x=>x.id===id);o.paidAt=today();op('vente.payee',{id,at:o.paidAt});const st=ptsState(o);toast(st==='valide'?`Payé · +${orderPts(o)} pts validés`:'Payé · après 14 jours, pas de points');renderView();break}
+    case 'ltype':document.querySelectorAll('#ltype button').forEach(b=>b.classList.toggle('on',b===t));break;
+    case 'addlog':{const c=C(id);const type=(document.querySelector('#ltype .on')||{}).dataset?.t||'Visite';
+      const l={date:today(),type,note:$('#lnote').value.trim()};c.logs=c.logs||[];c.logs.push(l);c.next=$('#lnext').value||null;
+      op('client.suivi',{cid:id,...l,next:c.next});toast('Suivi enregistré');clientSheet(id);if(tab!=='sell')renderView();break}
+    case 'newclient':newClientSheet();break;
+    case 'savenew':{const name=$('#nname').value.trim();if(!name){toast('Le nom est obligatoire');return}
+      const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null};
+      S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');
+      if(tab==='sell'){cart.cid=c.id}renderView();break}
+    case 'savesync':S.sync.url=$('#surl').value.trim()||SERVER_URL;S.sync.key=$('#skey').value.trim()||SERVER_KEY;S.sync.err=null;S.sync.pulled=0;save();trySync();toast(navigator.onLine?'Envoi en cours':'Enregistré. Envoi au retour du réseau');settingsSheet();break;
+    case 'csv':{try{const b=new Blob(['﻿'+csvText()],{type:'text/csv'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download='ventes-'+S.vendor+'-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}catch(e){toast('Téléchargement impossible ici, utilise Copier')}break}
+    case 'csvcopy':navigator.clipboard.writeText(csvText()).then(()=>toast('Copié. Colle dans Excel'),()=>toast('Copie refusée par le navigateur'));break;
+    case 'saveobj':{const v=parseInt($('#obj').value,10);if(v>0){S.objectives[ym]=v;save();toast('Objectif enregistré');closeSheet();renderView()}break}
+    case 'askreset':$('#resetbox').innerHTML=`<div class="card stack" style="border-color:var(--bad)"><span>Effacer toutes les données de ce téléphone ? ${S.outbox.length?'<b style="color:var(--bad)">'+S.outbox.length+' opération(s) pas encore envoyées seront perdues.</b>':''}</span><div class="hstack"><button class="btn" style="background:var(--bad)" data-act="reset">Oui, effacer</button><button class="btn ghost" data-act="close">Annuler</button></div></div>`;break;
+    case 'reset':try{localStorage.removeItem(KEY)}catch(e){}S=null;mem=null;cart=null;closeSheet();render();break;
+    case 'notif':Notification.requestPermission().then(p=>{if(p==='granted'){toast('Notifications activées');notifySummary(true)}renderView()});break;
+  }
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='cq'){cQuery=e.target.value;const pos=e.target.selectionStart;renderView();const i=$('#cq');i.focus();i.setSelectionRange(pos,pos)}
+  if(e.target.id==='pq'){$('#plist').innerHTML=pickList(e.target.value)}
+  if(e.target.id==='cnote'&&cart)cart.note=e.target.value;
+  if(e.target.id==='cdate'&&cart)cart.date=e.target.value||today();
+});
+document.addEventListener('change',e=>{
+  const q=e.target.dataset&&e.target.dataset.qin;
+  if(q&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));cart.q[q]=isFinite(v)&&v>0?Math.round(v*2)/2:0;renderView()}
+});
+
+/* ---------- notifications locales ---------- */
+function notifySummary(force){
+  try{
+    if(!('Notification' in window)||Notification.permission!=='granted'||!S)return;
+    const k=today();if(!force&&S.seen.notif===k)return;
+    const A=alerts();if(!A.length)return;
+    const n=t=>A.filter(a=>a.kind===t).length;
+    const body=[n('credit')&&n('credit')+' crédit(s) à encaisser',n('commande')&&n('commande')+' commande(s) à livrer',n('stock')&&n('stock')+' client(s) en fin de stock',n('relance')&&n('relance')+' relance(s)'].filter(Boolean).join(' · ');
+    const show=()=>new Notification('Elite Ventes · '+A.length+' alertes',{body,tag:'elite-daily'});
+    if(navigator.serviceWorker&&navigator.serviceWorker.ready){navigator.serviceWorker.ready.then(r=>r.showNotification('Elite Ventes · '+A.length+' alertes',{body,tag:'elite-daily',icon:'icon-192.png'})).catch(show)}else show();
+    S.seen.notif=k;save();
+  }catch(e){}
+}
+
+
+/* ====================== ESPACE DIRECTION ====================== */
+// Lit les ventes de tous les vendeurs sur le serveur (clé Direction), calcule points, KPI et feux.
+let D={key:null,data:null,loading:false,err:null,ym:today().slice(0,7),tab:'equipe',fetchedAt:null};
+try{const t=JSON.parse(localStorage.getItem(DIR_KEY)||'null');if(t){D.key=t.key;D.data=t.data;D.fetchedAt=t.fetchedAt}}catch(e){}
+function dirSave(){try{localStorage.setItem(DIR_KEY,JSON.stringify({key:D.key,data:D.data,fetchedAt:D.fetchedAt}))}catch(e){}}
+async function dirCall(body){
+  const r=await fetch(SERVER_URL+'/functions/v1/direction',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({key:D.key,...body})});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Erreur '+r.status));return j;
+}
+async function dirLoad(){
+  if(!D.key)return;D.loading=true;D.err=null;dirRender();
+  try{D.data=await dirCall({action:'data',days:150});D.fetchedAt=new Date().toISOString();dirSave()}
+  catch(e){D.err=navigator.onLine?e.message:'Hors ligne : affichage des dernières données reçues'}
+  D.loading=false;dirRender();
+}
+function dirModel(){
+  const d=D.data||{ops:[],grille:[],objectifs:[]};
+  const grid=Object.fromEntries((d.grille||[]).map(g=>[g.id,g]));
+  const obj=Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,o.points]));
+  const orders={},names={...(d.names||{})},newClients={};
+  (d.ops||[]).forEach(op=>{const p=op.payload||{};
+    if(op.type==='vente.creee')orders[p.id]={...p,vend:op.vendor};
+    else if(op.type==='vente.payee'&&orders[p.id])orders[p.id].paidAt=p.at;
+    else if(op.type==='vente.livree'&&orders[p.id]){orders[p.id].status='livree';orders[p.id].deliveredAt=p.at}
+    else if(op.type==='client.cree'){names[p.id]=p.name;(newClients[op.vendor]=newClients[op.vendor]||[]).push({id:p.id,date:op.created_at.slice(0,10)})}
+    if(op.type==='vente.creee'&&p.cname)names[p.cid]=p.cname;
+  });
+  return {grid,obj,orders:Object.values(orders),names,newClients,qbo:d.qbo};
+}
+const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
+const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
+function oState(o,t){if(o.paidAt)return days(o.date,o.paidAt)<=DELAI?'valide':'perdu';return days(o.date,t)<=DELAI?'attente':'perdu'}
+function dirStats(M,ym){
+  const t=today(),objM=M.obj[ym]||1900,perDay=Math.round(objM/26),vend={};
+  const get=v=>vend[v]||(vend[v]={v,valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},today:0,late:[],lateAmt:0,newC:0,orders:0,clients:new Set()});
+  M.orders.forEach(o=>{
+    const st=oState(o,t);
+    if(o.pay==='credit'&&!o.paidAt&&days(o.date,t)>DELAI){const g=get(o.vend);g.late.push(o);g.lateAmt+=oAmt(o)}
+    if(o.date.slice(0,7)!==ym)return;
+    const g=get(o.vend);g[st]+=oPts(o);g.cases+=o.lines.reduce((s,l)=>s+l.qty,0);g.amt+=oAmt(o);g.orders++;g.clients.add(o.cid);
+    if(o.date===t)g.today+=oPts(o);
+    o.lines.forEach(l=>{g.byP[l.pid]=(g.byP[l.pid]||0)+l.qty});
+  });
+  Object.entries(M.newClients).forEach(([v,l])=>{get(v).newC=l.filter(c=>c.date.slice(0,7)===ym).length});
+  const combo=Object.values(M.grid).filter(g=>g.combo>0);
+  Object.values(vend).forEach(g=>{
+    g.comboPct=combo.length?Math.min(...combo.map(c=>(g.byP[c.id]||0)/c.combo))*100:null;
+    const paid=M.orders.filter(o=>o.vend===g.v&&o.date.slice(0,7)===ym&&(o.paidAt||days(o.date,t)>DELAI));
+    g.encPct=paid.length?paid.filter(o=>o.paidAt&&days(o.date,o.paidAt)<=DELAI).length/paid.length*100:null;
+    g.feu=g.today>=perDay?'g':g.today>=perDay*0.7?'y':'r';
+    if(g.late.length&&Math.max(...g.late.map(o=>days(o.date,t)-DELAI))>=7)g.feu='r';
+    else if(g.late.length&&g.feu==='g')g.feu='y';
+  });
+  return {vend:Object.values(vend).sort((a,b)=>b.valide-a.valide),objM,perDay,combo};
+}
+function dirShell(){
+  return `<header class="top"><div class="top-row">${LOGO}<div class="who"><b>Espace Direction</b><small>Elite Auto Parts · tous les vendeurs</small></div>
+   <span class="net ${navigator.onLine?'':'off'}"><i></i>${navigator.onLine?'En ligne':'Hors ligne'}</span>
+   <button class="icon-btn" data-act="dirback" aria-label="Retour">×</button></div></header><main id="dview"></main>`;
+}
+function dirRender(){
+  const v=$('#dview');if(!v)return;
+  if(!D.key){v.innerHTML=`<section class="card stack"><b>Clé Direction</b><p class="muted" style="margin:0;font-size:13px">Réservé à Steve, Abenson et Gesmane. La clé reste sur cet appareil.</p>
+    <label class="f">Clé<input id="dkey" type="password" autocomplete="off"></label><button class="btn" data-act="dirlogin">Ouvrir</button>${D.err?`<span style="color:var(--bad)">${esc(D.err)}</span>`:''}</section>`;return}
+  const M=dirModel(),S2=dirStats(M,D.ym),[y,m]=D.ym.split('-').map(Number);
+  const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
+  const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
+  const tabs=[['equipe','Équipe'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  let body='';
+  if(D.tab==='equipe'){
+    body=`<section class="card hero"><div class="month-nav"><span class="lbl">Équipe · ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="dmprev" aria-label="Mois précédent">‹</button><button data-act="dmnext" aria-label="Mois suivant">›</button></span></div>
+      <div class="big num">${fmt(tot.valide)} <small>pts validés</small></div>
+      <div class="hero-grid"><div><b class="num">${fmt(tot.attente)}</b><small>pts en attente</small></div><div><b class="num">${fq(tot.cases)}</b><small>caisses</small></div><div><b class="num">${fmt(tot.amt)}</b><small>HTG vendus</small></div></div></section>
+      ${S2.vend.length?S2.vend.map(g=>{const pc=Math.min(100,g.valide/S2.objM*100);return `<section class="card stack">
+        <div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${esc(g.v)}</b><span class="chip ${g.feu==='g'?'c-ok':g.feu==='y'?'c-warn':'c-bad'}">Feu ${g.feu==='g'?'vert':g.feu==='y'?'jaune':'rouge'}</span></div>
+        <div><div class="hstack" style="justify-content:space-between"><span class="num"><b class="pts" style="font-size:20px">${fmt(g.valide)}</b> / ${fmt(S2.objM)} pts</span><span class="muted num">${Math.round(g.valide/S2.objM*100)} %</span></div><div class="mini-bar"><span class="${pc>=100?'done':''}" style="width:${pc}%"></span></div></div>
+        <div class="kv">
+          <div><b class="num">${fmt(g.attente)}</b><small>pts en attente</small></div>
+          <div><b class="num">${fmt(g.today)}</b><small>pts aujourd'hui (≥ ${S2.perDay})</small></div>
+          <div><b class="num">${fq(g.cases)}</b><small>caisses</small></div>
+          <div><b class="num">${g.comboPct==null?'—':Math.round(g.comboPct)+' %'}</b><small>combinaison (cible ≥ 80 %)</small></div>
+          <div><b class="num">${g.encPct==null?'—':Math.round(g.encPct)+' %'}</b><small>payé sous 14 j (≥ 90 %)</small></div>
+          <div><b class="num">${g.newC}</b><small>nouveaux clients (+5)</small></div>
+        </div>
+        ${g.late.length?`<span style="color:var(--bad);font-size:13px">${g.late.length} crédit(s) en retard · ${fmt(g.lateAmt)} HTG</span>`:''}
+        ${S2.combo.length?`<div class="rows">${S2.combo.map(c=>{const q=g.byP[c.id]||0;return `<div class="row"><div class="main">${esc(c.name)}<div class="mini-bar"><span class="${q>=c.combo?'done':''}" style="width:${Math.min(100,q/c.combo*100)}%"></span></div></div><div class="end num">${fq(q)} <small class="muted">/ ${c.combo}</small></div></div>`}).join('')}</div>`:''}
+      </section>`}).join(''):`<div class="card empty">Aucune vente saisie dans l'app pour ce mois. Les ventes apparaissent ici dès que les téléphones des vendeurs se synchronisent.</div>`}`;
+  } else if(D.tab==='credits'){
+    const t=today(),all=M.orders.filter(o=>o.pay==='credit'&&!o.paidAt).sort((a,b)=>a.date<b.date?-1:1);
+    body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
+  } else if(D.tab==='vendeurs'){
+    const vs=(D.data&&D.data.vendeurs)||[];
+    body=`<section class="card"><b>Vendeurs</b><div class="rows">${vs.map(x=>`<div class="row"><div class="main"><b>${esc(x.name)}</b></div><div class="end">${x.active?'<span class="chip c-ok">Actif</span>':'<span class="chip c-mute">Inactif</span>'}</div></div>`).join('')}</div></section>
+    <section class="card stack"><b>Nouveau vendeur ou nouveau PIN</b><p class="muted" style="margin:0;font-size:13px">Pour un nouvel agent, écris son nom : il commencera avec un portefeuille vide. Pour un agent existant, le nouveau PIN remplace l'ancien.</p>
+    <label class="f">Nom<input id="vname" list="vlist" autocomplete="off"><datalist id="vlist">${vs.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
+    <label class="f">PIN (4 à 8 chiffres)<input id="vpin" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+    <button class="btn" data-act="dsetpin">Enregistrer</button></section>`;
+  } else {
+    const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort);
+    body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div><button class="btn sec" data-act="dsaveobj">Enregistrer l'objectif</button></section>
+    <section class="card stack"><b>Grille du mois</b><p class="muted" style="margin:0;font-size:13px">Les téléphones reçoivent la nouvelle grille à la prochaine connexion. Les ventes déjà saisies gardent leurs points.</p>
+    <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:480px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Pts</th><th>Prix HTG</th><th>Combinaison</th><th>Stock dépôt</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td>${['pts','price','combo','stock'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
+    </tbody></table></div><button class="btn" data-act="dsavegrid">Publier la grille</button></section>`;
+  }
+  v.innerHTML=`<div class="seg">${tabs.map(([k,l])=>`<button data-act="dtab" data-f="${k}" class="${D.tab===k?'on':''}">${l}</button>`).join('')}</div>
+   <div class="hstack" style="justify-content:space-between;font-size:12.5px"><span class="muted">${D.loading?'Chargement…':D.fetchedAt?'Données du '+new Date(D.fetchedAt).toLocaleString('fr-FR'):''}${M.qbo?' · QuickBooks connecté ('+esc(M.qbo.environment)+')':' · QuickBooks non connecté'}</span><button class="btn sm ghost" data-act="dreload">Actualiser</button></div>
+   ${D.err?`<div class="card" style="color:var(--bad)">${esc(D.err)}</div>`:''}${body}
+   <button class="btn ghost" data-act="dlogout">Fermer la session Direction</button>`;
+}
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act;
+  if(a==='godir'){closeSheet();route='dir';render();if(D.key)dirLoad();}
+  else if(a==='dirback'){route='app';render()}
+  else if(a==='dirlogin'){D.key=($('#dkey').value||'').trim();if(!D.key)return;D.err=null;await dirLoad();if(D.err&&/incorrecte/.test(D.err)){D.key=null;dirSave();dirRender()}else dirSave()}
+  else if(a==='dlogout'){D={key:null,data:null,loading:false,err:null,ym:today().slice(0,7),tab:'equipe',fetchedAt:null};try{localStorage.removeItem(DIR_KEY)}catch(e){}dirRender()}
+  else if(a==='dtab'){D.tab=t.dataset.f;dirRender()}
+  else if(a==='dreload')dirLoad();
+  else if(a==='dmprev'||a==='dmnext'){const [y,m]=D.ym.split('-').map(Number);D.ym=iso(new Date(y,m-1+(a==='dmnext'?1:-1),1)).slice(0,7);dirRender()}
+  else if(a==='dsetpin'){try{await dirCall({action:'setPin',vendor:$('#vname').value,pin:$('#vpin').value});toast('Vendeur enregistré');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dsavegrid'){
+    const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r}));
+    document.querySelectorAll('[data-g]').forEach(i=>{const r=rows.find(x=>x.id===i.dataset.g);if(r)r[i.dataset.k]=parseFloat(String(i.value).replace(',','.'))||0});
+    try{await dirCall({action:'setGrid',rows});toast('Grille publiée');dirLoad()}catch(err){toast(err.message)}
+  }
+});
+
+/* ---------- boot ---------- */
+S=load();
+if(S&&!S.sync.url){S.sync.url=SERVER_URL;S.sync.key=SERVER_KEY;save()}
+render();
+if(S){pullConfig(true);trySync();setTimeout(()=>notifySummary(false),1500)}
+try{if('serviceWorker' in navigator&&location.protocol.startsWith('http')&&window.__PWA__)navigator.serviceWorker.register('sw.js')}catch(e){}
+</script>
+
+</body></html>
