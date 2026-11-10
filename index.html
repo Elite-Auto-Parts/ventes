@@ -873,7 +873,11 @@ function dirRender(){
     <section class="card stack"><b>Nouveau vendeur ou nouveau PIN</b><p class="muted" style="margin:0;font-size:13px">Pour un nouvel agent, écris son nom : il commencera avec un portefeuille vide. Pour un agent existant, le nouveau PIN remplace l'ancien.</p>
     <label class="f">Nom<input id="vname" list="vlist" autocomplete="off"><datalist id="vlist">${vs.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
     <label class="f">PIN (4 à 8 chiffres)<input id="vpin" inputmode="numeric" autocomplete="off" maxlength="8"></label>
-    <button class="btn" data-act="dsetpin">Enregistrer</button></section>`;
+    <button class="btn" data-act="dsetpin">Enregistrer</button></section>
+    <section class="card stack"><b>Clé Direction</b><p class="muted" style="margin:0;font-size:13px">Choisis une clé facile à retenir pour toi, au moins 8 caractères (par exemple une petite phrase). L'ancienne clé ne marchera plus, sur tous les appareils. Donne la nouvelle clé seulement à Steve, Abenson et Gesmane.</p>
+    <label class="f">Nouvelle clé<input id="nk1" type="password" autocomplete="new-password"></label>
+    <label class="f">Répéter la nouvelle clé<input id="nk2" type="password" autocomplete="new-password"></label>
+    <button class="btn" data-act="dchangekey">Changer la clé</button><div id="nkmsg"></div></section>`;
   } else {
     const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort).map(r=>({...r,pts:+r.pts,prix_achat:M.cost[r.id]??''}));
     body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div>
@@ -899,6 +903,12 @@ document.addEventListener('click',async e=>{
   else if(a==='dreload')dirLoad();
   else if(a==='dmprev'||a==='dmnext'){const [y,m]=D.ym.split('-').map(Number);D.ym=iso(new Date(y,m-1+(a==='dmnext'?1:-1),1)).slice(0,7);dirRender()}
   else if(a==='dsetpin'){try{await dirCall({action:'setPin',vendor:$('#vname').value,pin:$('#vpin').value});toast('Vendeur enregistré');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dchangekey'){
+    const k1=$('#nk1').value,k2=$('#nk2').value,msg=$('#nkmsg');
+    if(k1.trim().length<8){msg.innerHTML='<span style="color:var(--bad)">Au moins 8 caractères.</span>';return}
+    if(k1!==k2){msg.innerHTML='<span style="color:var(--bad)">Les deux clés ne sont pas pareilles.</span>';return}
+    try{await dirCall({action:'changeKey',newKey:k1});D.key=k1;dirSave();$('#nk1').value='';$('#nk2').value='';msg.innerHTML='<span style="color:var(--ok)">Clé changée. Elle est gardée sur cet appareil.</span>';toast('Clé Direction changée')}catch(err){msg.innerHTML='<span style="color:var(--bad)">'+esc(err.message)+'</span>'}
+  }
   else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value,cible_rapide:+$('#gc_rapide').value,cible_moyenne:+$('#gc_moyenne').value,cible_lente:+$('#gc_lente').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dsavegrid'){
     const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r,prix_achat:M.cost[r.id]}));
