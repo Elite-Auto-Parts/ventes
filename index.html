@@ -81,6 +81,12 @@ main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-lef
 .slab{position:relative;height:30px;font-size:11px;color:var(--muted);margin-top:4px}
 .slab span{position:absolute;transform:translateX(-50%);text-align:center;line-height:1.25;white-space:nowrap}
 .slab span.acc{color:var(--ok);font-weight:600}
+.mapbox{height:58vh;min-height:320px;border-radius:var(--r);border:1px solid var(--line);overflow:hidden;background:var(--brand-soft);z-index:0}
+[data-device="laptop"] .mapbox{height:calc(100vh - 220px)}
+.leaflet-popup-content{font-family:var(--f-body);font-size:13px;margin:10px 12px}
+.leaflet-popup-content b{font-size:14px}
+.mapchips{display:flex;gap:6px;flex-wrap:wrap}
+.lg{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}.lg i{width:10px;height:10px;border-radius:50%;display:inline-block}
 .hero-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .hero-grid div{background:rgba(255,255,255,.1);border-radius:10px;padding:8px 10px}
 .hero-grid b{display:block;font-family:var(--f-display);font-size:18px}
@@ -226,6 +232,8 @@ nav.tabs button .badge{top:2px;right:calc(50% - 22px)}
 @media (max-width:380px){.hero .big{font-size:38px}.kv,.hero-grid{grid-template-columns:1fr 1fr}}
 </style>
 
+<link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<script src="lib/leaflet/leaflet.js"></script>
 <div id="app"></div>
 
 <script id="seed" type="application/json">{"products": [{"id": "castrol", "name": "Castrol", "pts": 2.5, "price": 11000, "stock": 14, "combo": 40, "categorie": "moyenne", "sort": 4}, {"id": "multi40", "name": "Multi 40", "pts": 1.5, "price": 11250, "stock": 18, "combo": 20, "categorie": "rapide", "sort": 2}, {"id": "mobil", "name": "Mobil", "pts": 2.5, "price": 10000, "stock": 22.5, "combo": 0, "categorie": "moyenne", "sort": 5}, {"id": "ursahd40", "name": "Ursa HD 40", "pts": 3, "price": 9000, "stock": 45, "combo": 0, "categorie": "lente", "sort": 8}, {"id": "rallye4t", "name": "Rallye 4T", "pts": 2, "price": 9500, "stock": 25, "combo": 75, "categorie": "rapide", "sort": 0}, {"id": "ursa15w40", "name": "Ursa 15W40", "pts": 2.5, "price": 9750, "stock": 8, "combo": 15, "categorie": "moyenne", "sort": 6}, {"id": "over40", "name": "Over all 40", "pts": 3, "price": 5500, "stock": 10, "combo": 0, "categorie": "lente", "sort": 9}, {"id": "over2t", "name": "Over all 2T", "pts": 2, "price": 5500, "stock": 40, "combo": 50, "categorie": "moyenne", "sort": 7}, {"id": "american40", "name": "American Gold 40", "pts": 3, "price": 6500, "stock": 16, "combo": 0, "categorie": "lente", "sort": 10}, {"id": "ursaqt", "name": "Ursa 40 ¼ (qt)", "pts": 2, "price": 9000, "stock": 0, "combo": 0, "categorie": "rapide", "sort": 1}, {"id": "havoline40", "name": "Havoline 40", "pts": 3, "price": 9000, "stock": 33, "combo": 0, "categorie": "lente", "sort": 11}, {"id": "motext", "name": "Motex-T", "pts": 0.5, "price": 7250, "stock": 242, "combo": 0, "categorie": "rapide", "sort": 3}, {"id": "havoline10w30", "name": "Havoline 10W30", "pts": 0, "price": 9250, "stock": 1, "combo": 0, "categorie": "lente", "sort": 12}, {"id": "atf", "name": "Supers ATF", "pts": 0, "price": 4500, "stock": 4, "combo": 0, "categorie": "lente", "sort": 13}, {"id": "dot3", "name": "Supers DOT-3", "pts": 0, "price": 3500, "stock": 9, "combo": 0, "categorie": "lente", "sort": 14}]}</script>
@@ -262,6 +270,42 @@ try{BIG.addEventListener('change',()=>{setDevice();if(typeof render==='function'
 /* ---------- PIN gardé haché sur le téléphone (pour réafficher le salaire, même sans internet) ---------- */
 async function hashPin(pin,salt){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(salt+':'+pin));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function rememberPin(pin){try{const salt=[...crypto.getRandomValues(new Uint8Array(8))].map(x=>x.toString(16).padStart(2,'0')).join('');S.pinSalt=salt;S.pinHash=await hashPin(pin,salt);save()}catch(e){}}
+/* ---------- GPS : position des clients et tournée (le GPS marche sans internet) ---------- */
+const CAP=[19.757,-72.204];
+let lastFix=null,tourWatch=null,wakeLock=null;
+function getPos(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('GPS non disponible sur cet appareil'));
+  navigator.geolocation.getCurrentPosition(p=>{lastFix=[+p.coords.latitude.toFixed(6),+p.coords.longitude.toFixed(6),Date.now(),Math.round(p.coords.accuracy)];res(lastFix)},
+  e=>rej(new Error(e.code===1?'Autorise la localisation pour Elite Ventes dans les réglages du navigateur':'Position introuvable : réessaie dehors, loin des murs')),{enableHighAccuracy:true,timeout:25000,maximumAge:20000})})}
+const recentFix=()=>lastFix&&Date.now()-lastFix[2]<5*60e3?[lastFix[0],lastFix[1],lastFix[3]]:undefined;
+function distKm(a,b){const R=6371,r=x=>x*Math.PI/180,dl=r(b[0]-a[0]),dn=r(b[1]-a[1]),h=Math.sin(dl/2)**2+Math.cos(r(a[0]))*Math.cos(r(b[0]))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+const trackKm=pts=>pts.reduce((s,p,i)=>i?s+distKm(pts[i-1],p):0,0);
+function flushTour(force){if(!S||!S.tourOut||!S.tourOut.length)return;if(!force&&S.tourOut.length<20)return;const pts=S.tourOut.splice(0);op('tournee.points',{date:pts[0][4]||today(),pts:pts.map(p=>p.slice(0,4))})}
+function onTourFix(p){if(!S||!S.tour||!S.tour.active)return;const f=[+p.coords.latitude.toFixed(6),+p.coords.longitude.toFixed(6),Date.now(),Math.round(p.coords.accuracy)];lastFix=f;
+  if(f[3]>120)return;const last=S.tour.pts[S.tour.pts.length-1];
+  if(last&&distKm(last,f)<0.025&&f[2]-last[2]<120e3)return;
+  S.tour.pts.push(f);S.tourOut.push([...f,today()]);save();flushTour(false);
+  if(tab==='home'&&document.getElementById('tourinfo'))document.getElementById('tourinfo').innerHTML=tourInfo();}
+function startWatch(){if(tourWatch!=null||!navigator.geolocation)return;tourWatch=navigator.geolocation.watchPosition(onTourFix,e=>{if(e.code===1){toast('Autorise la localisation pour enregistrer la tournée');}},{enableHighAccuracy:true,maximumAge:10000,timeout:60000})}
+function stopWatch(){if(tourWatch!=null){navigator.geolocation.clearWatch(tourWatch);tourWatch=null}try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null}
+async function keepAwake(on){try{if(on&&'wakeLock' in navigator){wakeLock=await navigator.wakeLock.request('screen')}else if(!on&&wakeLock){await wakeLock.release();wakeLock=null}}catch(e){toast("L'écran ne peut pas rester allumé sur cet appareil")}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S&&S.tour&&S.tour.active){startWatch();if(S.tour.awake)keepAwake(true)}});
+function tourInfo(){const t=S.tour;if(!t||!t.active)return '';const km=trackKm(t.pts);const h=new Date(t.start);return `En cours depuis ${String(h.getHours()).padStart(2,'0')}h${String(h.getMinutes()).padStart(2,'0')} · ${t.pts.length} point(s) · ${km.toFixed(1).replace('.',',')} km`}
+/* ---------- carte (Leaflet, copie locale ; fond OpenStreetMap gardé en cache après la première visite) ---------- */
+let MAP=null,MAPview=null;
+function mountMap(id,center,zoom){
+  if(MAP){try{MAPview=[MAP.getCenter(),MAP.getZoom()];MAP.remove()}catch(e){}MAP=null}
+  const el=document.getElementById(id);if(!el)return null;
+  if(!window.L){el.innerHTML='<div class="empty">La carte a besoin de l\'app installée (elite-auto-parts.github.io/ventes).</div>';return null}
+  MAP=L.map(el,{zoomControl:true,attributionControl:true,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
+  MAP._restored=!!(MAPview&&MAPview[2]===id);if(MAP._restored)MAP.setView(MAPview[0],MAPview[1]);else MAP.setView(center||CAP,zoom||13);
+  MAP.on('moveend',()=>{MAPview=[MAP.getCenter(),MAP.getZoom(),id];if(typeof MAP._onMove==='function')MAP._onMove()});
+  MAPview=[MAP.getCenter(),MAP.getZoom(),id];
+  setTimeout(()=>MAP&&MAP.invalidateSize(),60);
+  return MAP;
+}
+const dotR=v=>Math.min(18,5+Math.sqrt(v||0)*1.6);
+const gmaps=(lat,lng)=>`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 /* ---------- utils ---------- */
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -288,9 +332,9 @@ function init(vendor,pf){
   S={v:2,vendor,created:new Date().toISOString(),
     products:SEED.products.map(p=>({...p})),
     objectives:{'2026-11':440,'2026-12':440,'2027-01':440,'2027-02':440},defaultObjective:440,
-    clients:(pf.clients||[]).map(c=>({...c,logs:[],next:null})),
+    clients:(pf.clients||[]).map(c=>({...c,logs:c.logs||[],next:c.next||null})),
     orders:(pf.orders||[]).map(o=>({...o,paidAt:o.pay==='cash'?o.date:o.paidAt})),
-    token:pf.token||null,seenDec:{},visitsPlanned:{},outbox:[],sync:{url:SERVER_URL,key:SERVER_KEY,last:null},seen:{}};
+    token:pf.token||null,seenDec:pf.seenDec||{},tour:null,tourOut:[],visitsPlanned:{},outbox:[],sync:{url:SERVER_URL,key:SERVER_KEY,last:null},seen:{}};
   save();
 }
 function op(type,payload){S.outbox.push({id:uid(),vendor:S.vendor,type,payload,at:new Date().toISOString()});save();trySync()}
@@ -431,6 +475,7 @@ addEventListener('online',()=>{renderTop();trySync()});
 addEventListener('offline',renderTop);
 
 /* ---------- UI state ---------- */
+let cView='list',mapF={client:true,prospect:true};
 let tab='home', ym=today().slice(0,7), cFilter='alerte', cQuery='', oFilter='attente';
 let cart=null;
 function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2400)}
@@ -461,7 +506,9 @@ function tabsView(){
 }
 function renderView(){
   const v=$('#view');
+  if(MAP&&!(tab==='clients'&&cView==='map')){try{MAP.remove()}catch(e){}MAP=null}
   v.innerHTML=({home:homeView,clients:clientsView,sell:sellView,orders:ordersView,alerts:alertsView})[tab]();
+  if(tab==='clients'&&cView==='map')initAgentMap();
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   renderTop();
 }
@@ -532,6 +579,8 @@ function homeView(){
     </div>
   </section>
   ${salaryCard(st,obj)}
+  ${isCur?`<div class="sec-title">Tournée terrain</div><section class="card stack">${S.tour&&S.tour.active?`<div class="hstack" style="justify-content:space-between"><span><b style="color:var(--ok)">● Tournée en cours</b><br><small class="muted" id="tourinfo">${tourInfo()}</small></span><button class="btn sm" data-act="tourstop">Terminer</button></div>
+    <label class="hstack" style="font-size:13px"><input type="checkbox" data-act="tourawake" ${S.tour.awake?'checked':''}> Garder l'écran allumé (le parcours s'enregistre seulement quand l'app est ouverte)</label>`:`<div class="hstack" style="justify-content:space-between"><span><b>Pas de tournée en cours</b><br><small class="muted">Démarre-la en partant sur le terrain : ton parcours et tes visites seront tracés sur la carte.</small></span><button class="btn sm" data-act="tourstart">Démarrer</button></div>`}</section>`:''}
   ${isCur?`<div class="sec-title">Feu du jour</div>
   <section class="card stack">
     <div class="hstack" style="justify-content:space-between"><b>Couleur du jour : <span class="chip ${worst==='g'?'c-ok':worst==='y'?'c-warn':'c-bad'}">${feuName[worst]}</span></b><small class="muted">Objectif ≈ ${perDay} pts/jour</small></div>
@@ -589,9 +638,37 @@ function clientsView(){
   let list=S.clients.filter(filters[cFilter]).filter(c=>!q||(c.name+' '+c.zone+' '+c.phone).toLowerCase().includes(q));
   list.sort((a,b)=>{const ia=info.get(a.id),ib=info.get(b.id);return (ib.last||'')<(ia.last||'')?-1:(ib.last||'')>(ia.last||'')?1:a.name.localeCompare(b.name)});
   const lab={alerte:'À suivre',tous:'Tous',credit:'Crédit ouvert',prospect:'Prospects'};
-  return `<div class="hstack"><input class="search" id="cq" type="search" placeholder="Chercher un client, une zone, un numéro" value="${esc(cQuery)}" style="flex:1"><button class="btn sec" data-act="newclient">+ Client</button></div>
+  const toggle=`<div class="seg"><button data-act="cview" data-v="list" class="${cView==='list'?'on':''}">Liste</button><button data-act="cview" data-v="map" class="${cView==='map'?'on':''}">Carte</button></div>`;
+  if(cView==='map')return toggle+agentMapView(info,alertIds);
+  return toggle+`<div class="hstack"><input class="search" id="cq" type="search" placeholder="Chercher un client, une zone, un numéro" value="${esc(cQuery)}" style="flex:1"><button class="btn sec" data-act="newclient">+ Client</button></div>
   <div class="seg">${Object.keys(filters).map(k=>`<button data-act="cf" data-f="${k}" class="${cFilter===k?'on':''}">${lab[k]}<span class="n">${counts[k]}</span></button>`).join('')}</div>
   <section class="card"><div class="rows">${list.map(c=>clientRow(c,info.get(c.id),A)).join('')||'<div class="empty">Aucun client dans ce filtre.</div>'}</div></section>`;
+}
+function vol90(c){const lim=addDays(today(),-90);return S.orders.filter(o=>o.cid===c.id&&o.date>=lim&&o.status!=='annulee').reduce((s,o)=>s+orderCases(o),0)}
+function agentMapView(info,alertIds){
+  const geo=S.clients.filter(c=>c.lat!=null),sans=S.clients.length-geo.length;
+  return `<div class="hstack" style="justify-content:space-between"><div class="mapchips"><button class="chip ${mapF.client?'c-info':'c-mute'}" style="border:0;cursor:pointer" data-act="mf" data-f="client">Clients</button><button class="chip ${mapF.prospect?'c-warn':'c-mute'}" style="border:0;cursor:pointer" data-act="mf" data-f="prospect">Prospects</button></div><button class="btn sm sec" data-act="mylocation">📍 Ma position</button></div>
+  <div class="layout2"><div class="col-a"><div id="map" class="mapbox"></div>
+   <div class="hstack" style="gap:12px"><span class="lg"><i style="background:#06279e"></i>client (taille = caisses 90 j)</span><span class="lg"><i style="background:#e8890c"></i>prospect</span><span class="lg"><i style="background:#fff;border:2px solid #c0262d"></i>à relancer / stock fini</span>${S.tours&&S.tours[today()]||S.tour&&S.tour.active?'<span class="lg"><i style="background:#16a34a"></i>ma tournée du jour</span>':''}</div>
+   ${sans?`<small class="muted">${sans} client(s) sans position GPS : ouvre leur fiche devant la boutique et touche « Enregistrer la position ».</small>`:''}</div>
+  <div class="col-b"><section class="card"><b>Dans la zone visible</b><div id="mapzone" class="rows" style="margin-top:6px"><div class="empty">Déplace ou zoome la carte.</div></div></section></div></div>`;
+}
+function initAgentMap(){
+  const m=mountMap('map');if(!m)return;
+  const A=alerts(),hot=new Set(A.filter(a=>a.cid&&(a.kind==='stock'||a.kind==='relance')).map(a=>a.cid));
+  const pts=[];
+  const tr=(S.tour&&S.tour.active&&S.tour.date===today())?S.tour.pts:(S.tours&&S.tours[today()])||[];
+  if(tr.length>1)L.polyline(tr.map(p=>[p[0],p[1]]),{color:'#16a34a',weight:4,opacity:.8}).addTo(m);
+  S.clients.forEach(c=>{if(c.lat==null)return;const pr=c.status==='prospect';if(pr&&!mapF.prospect||!pr&&!mapF.client)return;const v=vol90(c);
+    const mk=L.circleMarker([c.lat,c.lng],{radius:pr?6:dotR(v),color:hot.has(c.id)?'#c0262d':'#ffffff',weight:hot.has(c.id)?3:1.5,fillColor:pr?'#e8890c':'#06279e',fillOpacity:.85}).addTo(m);
+    mk.bindPopup(`<b>${esc(c.name)}</b><br>${esc(c.zone||'')}<br>${pr?'Prospect':fq(v)+' caisses sur 90 jours'}<br><a href="${gmaps(c.lat,c.lng)}" target="_blank" rel="noopener">Itinéraire</a> · <a href="#" data-act="client" data-id="${esc(c.id)}">Fiche</a>`);pts.push([c.lat,c.lng])});
+  if(!m._restored&&pts.length){try{m.fitBounds(pts,{padding:[30,30],maxZoom:16})}catch(e){}}
+  const upd=()=>{const b=m.getBounds(),inb=S.clients.filter(c=>c.lat!=null&&b.contains([c.lat,c.lng]));const cl=inb.filter(c=>c.status!=='prospect').map(c=>({c,v:vol90(c)})).sort((a,b)=>b.v-a.v),pr=inb.filter(c=>c.status==='prospect');
+    const z=document.getElementById('mapzone');if(!z)return;
+    z.innerHTML=`<div class="row"><div class="main"><b>${cl.length} client(s) · ${pr.length} prospect(s)</b><small>${fq(cl.reduce((s,x)=>s+x.v,0))} caisses sur 90 jours dans la zone</small></div></div>`+
+     cl.slice(0,10).map((x,i)=>`<div class="row tap" data-act="client" data-id="${esc(x.c.id)}"><div class="main"><b>${i+1}. ${esc(x.c.name)}</b><small>${esc(x.c.zone||'')}</small></div><div class="end num"><b>${fq(x.v)}</b> <small class="muted">caisses</small></div></div>`).join('')+
+     (pr.length?`<div class="row"><div class="main"><b>Prospects à visiter</b><small>${pr.slice(0,12).map(c=>esc(c.name)).join(' · ')}${pr.length>12?' …':''}</small></div></div>`:'')};
+  m._onMove=upd;upd();
 }
 function clientRow(c,k,A){
   const a=A.find(x=>x.cid===c.id&&(x.kind==='stock'||x.kind==='relance'));
@@ -606,6 +683,7 @@ function clientSheet(id){
   const logs=(c.logs||[]).slice().reverse();
   openSheet(`<div class="sheet-head"><h2>${esc(c.name)}</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="hstack">${c.status==='prospect'?'<span class="chip c-info">Prospect</span>':'<span class="chip c-ok">Client</span>'}<span class="chip c-mute">${esc(c.zone||'Zone ?')}</span>${c.next?`<span class="chip c-warn">Relance le ${dShort(c.next)}</span>`:''}</div>
+  <div class="card stack" style="padding:10px 12px">${c.lat!=null?`<div class="hstack" style="justify-content:space-between"><span><b>📍 Position GPS</b><br><small class="muted">enregistrée le ${dShort(String(c.gpsAt||'').slice(0,10)||today())} · précision ±${c.acc||'?'} m</small></span><span class="hstack"><button class="btn sm sec" data-act="cmap" data-id="${esc(c.id)}">Carte</button><a class="btn sm ghost" href="${gmaps(c.lat,c.lng)}" target="_blank" rel="noopener">Itinéraire</a><button class="btn sm ghost" data-act="cgps" data-id="${esc(c.id)}">Mettre à jour</button></span></div>`:`<div class="hstack" style="justify-content:space-between"><span><b>Pas de position GPS</b><br><small class="muted">À faire quand tu es devant la boutique du client</small></span><button class="btn sm" data-act="cgps" data-id="${esc(c.id)}">Enregistrer la position</button></div>`}<div id="gpsmsg"></div></div>
   <div class="phone">${c.phone?c.phone.split('/').map(p=>`<code>${esc(p.trim())}</code><a class="btn sm sec" href="tel:${esc(p.trim())}">Appeler</a><a class="btn sm ghost" href="https://wa.me/509${esc(p.trim().replace(/\D/g,''))}" target="_blank" rel="noopener">WhatsApp</a>`).join(''):'<span class="muted">Pas de numéro</span>'}</div>
   <div class="kv">
     <div><b class="num">${k.last?ago(k.since):'—'}</b><small>dernière commande</small></div>
@@ -761,6 +839,7 @@ function newClientSheet(){
   openSheet(`<div class="sheet-head"><h2>Nouveau client</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="card stack"><label class="f">Nom de l'auto-parts<input id="nname"></label><label class="f">Téléphone<input id="nphone" inputmode="tel" placeholder="3xxx xxxx / 4xxx xxxx"></label>
   <label class="f">Zone / adresse<input id="nzone"></label><label class="f">Statut<select id="nstat"><option value="prospect">Prospect</option><option value="client">Client</option></select></label>
+  <label class="hstack" style="font-size:13.5px"><input type="checkbox" id="ngps" checked> Enregistrer ma position GPS (je suis devant la boutique)</label>
   <button class="btn" data-act="savenew">Ajouter</button></div>`);
 }
 
@@ -768,6 +847,7 @@ function newClientSheet(){
 document.addEventListener('click',e=>{
   if(e.target.id==='scrim'){closeSheet();return}
   const t=e.target.closest('[data-act],[data-tab]');if(!t)return;
+  if(t.tagName==='A'&&t.getAttribute('href')==='#')e.preventDefault();
   if(t.dataset.tab){tab=t.dataset.tab;closeSheet();renderView();scrollTo(0,0);return}
   const a=t.dataset.act,id=t.dataset.id;
   switch(a){
@@ -793,7 +873,7 @@ document.addEventListener('click',e=>{
       const lines=Object.entries(cart.q).filter(([,q])=>q>0).map(([pid,qty])=>({pid,qty,price:P(pid).price,pts:P(pid).pts}));
       if(!cart.cid||!lines.length)return;
       const date=$('#cdate').value||today();
-      const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString()};
+      const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString(),gps:recentFix()};
       S.orders.push(o);const c=C(cart.cid);if(c.status==='prospect'){c.status='client';op('client.update',{id:c.id,status:'client'})}
       lines.forEach(l=>{const p=P(l.pid);if(o.status==='livree')p.stock=Math.max(0,p.stock-l.qty)});
       op('vente.creee',o);
@@ -804,10 +884,21 @@ document.addEventListener('click',e=>{
     case 'paid':{const o=S.orders.find(x=>x.id===id);o.paidAt=today();op('vente.payee',{id,at:o.paidAt});const st=ptsState(o);toast(st==='aconfirmer'?`Paiement envoyé à la caisse · ${fp(orderPts(o))} pts après confirmation`:st==='valide'?`Payé · +${fp(orderPts(o))} pts validés`:'Payé · après 14 jours, pas de points');renderView();break}
     case 'ltype':document.querySelectorAll('#ltype button').forEach(b=>b.classList.toggle('on',b===t));break;
     case 'addlog':{const c=C(id);const type=(document.querySelector('#ltype .on')||{}).dataset?.t||'Visite';
-      const l={date:today(),type,note:$('#lnote').value.trim()};c.logs=c.logs||[];c.logs.push(l);c.next=$('#lnext').value||null;
+      const l={date:today(),type,note:$('#lnote').value.trim(),gps:recentFix()};c.logs=c.logs||[];c.logs.push(l);c.next=$('#lnext').value||null;
       op('client.suivi',{cid:id,...l,next:c.next});toast('Suivi enregistré');clientSheet(id);if(tab!=='sell')renderView();break}
     case 'newclient':newClientSheet();break;
     case 'askrelogin':reloginSheet();break;
+    case 'cgps':{const c=C(id),m2=$('#gpsmsg');if(m2)m2.innerHTML='<small class="muted">Recherche de la position…</small>';
+      getPos().then(f=>{c.lat=f[0];c.lng=f[1];c.acc=f[3];c.gpsAt=new Date().toISOString();save();op('client.update',{id:c.id,lat:c.lat,lng:c.lng,acc:c.acc,gpsAt:c.gpsAt});
+        toast(f[3]>100?'Position enregistrée, mais peu précise (±'+f[3]+' m) : refais-la dehors':'Position enregistrée (±'+f[3]+' m)');clientSheet(id)})
+      .catch(e=>{if(m2)m2.innerHTML='<small style="color:var(--bad)">'+esc(e.message)+'</small>'});break}
+    case 'cmap':{const c=C(id);closeSheet();tab='clients';cView='map';MAPview=[{lat:c.lat,lng:c.lng},17,'map'];renderView();break}
+    case 'cview':cView=t.dataset.v;renderView();break;
+    case 'mf':mapF[t.dataset.f]=!mapF[t.dataset.f];renderView();break;
+    case 'mylocation':getPos().then(f=>{if(MAP){MAP.setView([f[0],f[1]],16);L.circleMarker([f[0],f[1]],{radius:7,color:'#fff',weight:2,fillColor:'#1a73e8',fillOpacity:1}).addTo(MAP)}}).catch(e=>toast(e.message));break;
+    case 'tourstart':S.tour={active:true,date:today(),start:Date.now(),pts:[],awake:false};save();startWatch();getPos().then(f=>onTourFix({coords:{latitude:f[0],longitude:f[1],accuracy:f[3]}})).catch(e=>toast(e.message));renderView();toast('Tournée démarrée : garde l\'app ouverte');break;
+    case 'tourstop':{flushTour(true);const km=trackKm(S.tour.pts);(S.tours=S.tours||{})[S.tour.date]=S.tour.pts.map(p=>p.slice(0,3));S.tour.active=false;save();stopWatch();toast('Tournée terminée · '+km.toFixed(1).replace('.',',')+' km');renderView();break}
+    case 'tourawake':S.tour.awake=t.checked;save();keepAwake(t.checked);break;
     case 'salfold':S.salUI='folded';save();renderView();break;
     case 'salopen':S.salUI='open';save();renderView();break;
     case 'salmask':S.salUI='masked';save();renderView();toast('Salaire masqué');break;
@@ -821,7 +912,9 @@ document.addEventListener('click',e=>{
       .catch(e=>{$('#rmsg').innerHTML='<span style="color:var(--bad)">'+esc(navigator.onLine?e.message:'Pas de connexion internet')+'</span>'});break}
     case 'savenew':{const name=$('#nname').value.trim();if(!name){toast('Le nom est obligatoire');return}
       const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null};
+      const wantGps=$('#ngps')&&$('#ngps').checked;
       S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');
+      if(wantGps)getPos().then(f=>{c.lat=f[0];c.lng=f[1];c.acc=f[3];c.gpsAt=new Date().toISOString();save();op('client.update',{id:c.id,lat:c.lat,lng:c.lng,acc:c.acc,gpsAt:c.gpsAt});toast('Position GPS enregistrée (±'+c.acc+' m)')}).catch(e=>toast(e.message));
       if(tab==='sell'){cart.cid=c.id}renderView();break}
     case 'savesync':S.sync.url=$('#surl').value.trim()||SERVER_URL;S.sync.key=$('#skey').value.trim()||SERVER_KEY;S.sync.err=null;S.sync.pulled=0;save();trySync();toast(navigator.onLine?'Envoi en cours':'Enregistré. Envoi au retour du réseau');settingsSheet();break;
     case 'csv':{try{const b=new Blob(['﻿'+csvText()],{type:'text/csv'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download='ventes-'+S.vendor+'-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}catch(e){toast('Téléchargement impossible ici, utilise Copier')}break}
@@ -891,7 +984,14 @@ function dirModel(){
   const cib=Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,{rapide:+o.cible_rapide||0,moyenne:+o.cible_moyenne||0,lente:+o.cible_lente||0}]));
   const remu={...REMU0,...(d.remuneration||{})};
   const vp={};(d.ventes_produit||[]).forEach(r=>{vp[r.ym+'|'+r.produit]=(vp[r.ym+'|'+r.produit]||0)+(+r.caisses||0)});
-  return {grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,mouv:d.mouvements||[],dettes:d.dettes_fournisseurs||[],objMarge:+remu.marge_min||125000};
+  const geo={},meta={...(d.clients_meta||{})},vol={...(d.volumes_hist||{})},visits=[],lim120=iso(Date.now()-120*864e5);
+  (d.ops||[]).forEach(op=>{const p=op.payload||{};
+    if(op.type==='client.cree'){meta[p.id]={name:p.name,vendor:op.vendor,prospect:p.status==='prospect',zone:p.zone||'',phone:p.phone||''};if(p.lat!=null)geo[p.id]={lat:p.lat,lng:p.lng,at:p.gpsAt}}
+    else if(op.type==='client.update'){if(p.lat!=null)geo[p.id]={lat:p.lat,lng:p.lng,at:p.gpsAt};if(p.status&&meta[p.id])meta[p.id].prospect=p.status==='prospect'}
+    else if(op.type==='vente.creee'){if(p.date>=lim120)vol[p.cid]=(vol[p.cid]||0)+(p.lines||[]).reduce((s2,l)=>s2+(+l.qty||0),0);if(p.gps)visits.push({vendor:op.vendor,date:p.date,cid:p.cid,lat:p.gps[0],lng:p.gps[1],kind:'Vente',amt:oAmt(p)})}
+    else if(op.type==='client.suivi'&&p.gps)visits.push({vendor:op.vendor,date:p.date,cid:p.cid,lat:p.gps[0],lng:p.gps[1],kind:p.type||'Suivi'});
+  });
+  return {geo,meta,vol,visits,grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,mouv:d.mouvements||[],dettes:d.dettes_fournisseurs||[],objMarge:+remu.marge_min||125000};
 }
 const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
 const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
@@ -961,6 +1061,47 @@ function rotation(M,rows){
   const ROT={};rows.forEach(r=>{const v=[m1,m2].map(ym=>(M.vp[ym+'|'+r.id]||0)+(appV[ym+'|'+r.id]||0));const vm=(v[0]+v[1])/2,st=+r.stock||0,lot=+r.lot||50,jours=vm>0?st/(vm/30):(st>0?Infinity:null),jl=vm>0?lot/(vm/30):Infinity;
     ROT[r.id]={vm,jours,jl,sug:(st<=0&&vm<1)?'rupture':jl<=30?'rapide':jl<=90?'moyenne':'lente'}});
   return ROT;
+}
+// Carte Direction : clients et prospects de tous les vendeurs, meilleurs clients de la zone, parcours d'une journée
+D.mf={client:true,prospect:true};D.mv='all';D.trk=null;D.trkDays=null;
+function dirCarte(M){
+  D.mf=D.mf||{client:true,prospect:true};D.mv=D.mv||'all';
+  const vs=(D.data&&D.data.vendeurs||[]).map(v=>v.name);
+  const sans=Object.keys(M.meta).filter(k=>!M.geo[k]&&(D.mv==='all'||M.meta[k].vendor===D.mv)).length;
+  if(!D.trkDays){D.trkDays={};dirCall({action:'trackDays'}).then(r=>{D.trkDays=r.days||{};if(D.tab==='carte'){const sel=document.getElementById('tk_date');if(sel)dirRender()}}).catch(()=>{})}
+  const tv=D.trk&&D.trk.vendor||vs[0]||'',days=(D.trkDays&&D.trkDays[tv])||[];
+  const sel='style="padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg)"';
+  const trk=D.trk&&D.trk.pts;let tinfo='';
+  if(trk){const km=trackKm(trk),dur=trk.length>1?(trk[trk.length-1][2]-trk[0][2])/60000:0,vis=M.visits.filter(v=>v.vendor===D.trk.vendor&&v.date===D.trk.date);
+    tinfo=`<div class="kv" style="margin-top:8px"><div><b class="num">${km.toFixed(1).replace('.',',')}</b><small>km parcourus</small></div><div><b class="num">${Math.floor(dur/60)}h${String(Math.round(dur%60)).padStart(2,'0')}</b><small>de tournée</small></div><div><b class="num">${vis.length}</b><small>visite(s) / vente(s) localisées</small></div></div>${trk.length?'':'<small class="muted">Aucun point GPS ce jour-là.</small>'}`}
+  return `<div class="hstack" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div class="hstack"><select data-mv="1" ${sel}><option value="all">Tous les vendeurs</option>${vs.map(v=>`<option ${D.mv===v?'selected':''}>${esc(v)}</option>`).join('')}</select>
+    <button class="chip ${D.mf.client?'c-info':'c-mute'}" style="border:0;cursor:pointer" data-act="dmf" data-f="client">Clients</button><button class="chip ${D.mf.prospect?'c-warn':'c-mute'}" style="border:0;cursor:pointer" data-act="dmf" data-f="prospect">Prospects</button></div>
+    <div class="hstack"><b style="font-size:13px">Parcours</b><select id="tk_v" ${sel}>${vs.map(v=>`<option ${tv===v?'selected':''}>${esc(v)}</option>`).join('')}</select><select id="tk_date" ${sel}>${days.length?days.map(d=>`<option ${D.trk&&D.trk.date===d?'selected':''} value="${d}">${dShort(d)}</option>`).join(''):'<option value="">aucune tournée</option>'}</select><button class="btn sm sec" data-act="dtrack">Afficher</button>${D.trk?'<button class="btn sm ghost" data-act="dtrackoff">Effacer</button>':''}</div></div>
+  <div class="layout2"><div class="col-a"><div id="dmap" class="mapbox"></div>
+    <div class="hstack" style="gap:12px"><span class="lg"><i style="background:#06279e"></i>client (taille = caisses 120 j)</span><span class="lg"><i style="background:#e8890c"></i>prospect</span><span class="lg"><i style="background:#16a34a"></i>parcours</span><span class="lg"><i style="background:#c0262d"></i>vente / visite localisée</span></div>
+    ${sans?`<small class="muted">${sans} client(s) ou prospect(s) n'ont pas encore de position GPS : les vendeurs l'enregistrent depuis la fiche client.</small>`:''}${tinfo}</div>
+  <div class="col-b"><section class="card"><b>Dans la zone visible</b><div id="dzone" class="rows" style="margin-top:6px"><div class="empty">Déplace ou zoome la carte.</div></div></section></div></div>`;
+}
+function initDirMap(M){
+  const m=mountMap('dmap');if(!m)return;const pts=[];
+  Object.entries(M.geo).forEach(([cid,g])=>{const mt=M.meta[cid]||{name:M.names[cid]||cid,vendor:'?'};if(D.mv!=='all'&&mt.vendor!==D.mv)return;const pr=!!mt.prospect;if(pr&&!D.mf.prospect||!pr&&!D.mf.client)return;const v=M.vol[cid]||0;
+    L.circleMarker([g.lat,g.lng],{radius:pr?6:dotR(v),color:'#fff',weight:1.5,fillColor:pr?'#e8890c':'#06279e',fillOpacity:.85}).addTo(m)
+     .bindPopup(`<b>${esc(mt.name)}</b><br>${esc(mt.vendor)} · ${esc(mt.zone||'')}<br>${pr?'Prospect':fq(v)+' caisses sur 120 jours'}<br><a href="${gmaps(g.lat,g.lng)}" target="_blank" rel="noopener">Itinéraire</a>`);pts.push([g.lat,g.lng])});
+  if(D.trk&&D.trk.pts&&D.trk.pts.length){const ll=D.trk.pts.map(p=>[p[0],p[1]]);L.polyline(ll,{color:'#16a34a',weight:4,opacity:.85}).addTo(m);
+    L.circleMarker(ll[0],{radius:7,color:'#fff',weight:2,fillColor:'#16a34a',fillOpacity:1}).addTo(m).bindPopup('Départ '+new Date(D.trk.pts[0][2]).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
+    L.circleMarker(ll[ll.length-1],{radius:7,color:'#fff',weight:2,fillColor:'#141a33',fillOpacity:1}).addTo(m).bindPopup('Fin '+new Date(D.trk.pts[D.trk.pts.length-1][2]).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}));
+    M.visits.filter(v=>v.vendor===D.trk.vendor&&v.date===D.trk.date).forEach(v=>L.circleMarker([v.lat,v.lng],{radius:6,color:'#fff',weight:2,fillColor:'#c0262d',fillOpacity:1}).addTo(m).bindPopup(`<b>${esc((M.meta[v.cid]||{}).name||M.names[v.cid]||'Client')}</b><br>${esc(v.kind)}${v.amt?' · '+fmt(v.amt)+' HTG':''}`));
+    if(!D.trk.fitted){try{m.fitBounds(ll,{padding:[30,30],maxZoom:16})}catch(e){}D.trk.fitted=true}}
+  else if(!m._restored&&pts.length){try{m.fitBounds(pts,{padding:[30,30],maxZoom:15})}catch(e){}}
+  const upd=()=>{const b=m.getBounds(),inb=Object.entries(M.geo).filter(([cid,g])=>b.contains([g.lat,g.lng])&&(D.mv==='all'||(M.meta[cid]||{}).vendor===D.mv));
+    const cl=inb.filter(([cid])=>!(M.meta[cid]||{}).prospect).map(([cid])=>({cid,v:M.vol[cid]||0,mt:M.meta[cid]||{name:M.names[cid]||cid}})).sort((a,b)=>b.v-a.v),pr=inb.filter(([cid])=>(M.meta[cid]||{}).prospect);
+    const byV={};cl.forEach(x=>byV[x.mt.vendor||'?']=(byV[x.mt.vendor||'?']||0)+x.v);
+    const z=document.getElementById('dzone');if(!z)return;
+    z.innerHTML=`<div class="row"><div class="main"><b>${cl.length} client(s) · ${pr.length} prospect(s)</b><small>${fq(cl.reduce((s2,x)=>s2+x.v,0))} caisses sur 120 jours${Object.keys(byV).length>1?' · '+Object.entries(byV).map(([v,n])=>esc(v)+' '+fq(n)).join(' · '):''}</small></div></div>`+
+      cl.slice(0,12).map((x,i)=>`<div class="row"><div class="main"><b>${i+1}. ${esc(x.mt.name)}</b><small>${esc(x.mt.vendor||'')} · ${esc(x.mt.zone||'')}</small></div><div class="end num"><b>${fq(x.v)}</b> <small class="muted">caisses</small></div></div>`).join('')+
+      (pr.length?`<div class="row"><div class="main"><b>Prospects dans la zone</b><small>${pr.slice(0,15).map(([cid])=>esc((M.meta[cid]||{}).name||cid)+' ('+esc((M.meta[cid]||{}).vendor||'')+')').join(' · ')}</small></div></div>`:'')};
+  m._onMove=upd;upd();
 }
 // Stock : achats reçus (Gesmane), inventaires, dettes fournisseurs. Les ventes livrées sortent du stock automatiquement.
 function dirStock(M){
@@ -1073,7 +1214,7 @@ function dirRender(){
   const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
   const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
   const nConf=M.orders.filter(o=>o.paidAt&&!o.confirmedAt).length;
-  const tabs=[['equipe','Équipe'],['croissance','Croissance'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['stock','Stock'],['mois','Mois passés'],['controles','Contrôles'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  const tabs=[['equipe','Équipe'],['croissance','Croissance'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['stock','Stock'],['carte','Carte'],['mois','Mois passés'],['controles','Contrôles'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
   let body='';
   const PREV=monthAgg(M);
   if(D.tab==='equipe'){
@@ -1105,6 +1246,8 @@ function dirRender(){
     body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
   } else if(D.tab==='caisse'){
     body=dirCaisse(M);
+  } else if(D.tab==='carte'){
+    body=dirCarte(M);
   } else if(D.tab==='stock'){
     body=dirStock(M);
   } else if(D.tab==='croissance'){
@@ -1146,8 +1289,9 @@ function dirRender(){
    <div class="hstack" style="justify-content:space-between;font-size:12.5px"><span class="muted">${D.loading?'Chargement…':D.fetchedAt?'Données du '+new Date(D.fetchedAt).toLocaleString('fr-FR'):''}${M.qbo?' · QuickBooks connecté ('+esc(M.qbo.environment)+')':' · QuickBooks non connecté'}</span><button class="btn sm ghost" data-act="dreload">Actualiser</button></div>
    ${D.err?`<div class="card" style="color:var(--bad)">${esc(D.err)}</div>`:''}${body}
    <button class="btn ghost" data-act="dlogout">Fermer la session Direction</button>`;
+  if(D.tab==='carte')initDirMap(M);else if(MAP){try{MAP.remove()}catch(e){}MAP=null}
 }
-document.addEventListener('change',e=>{if(e.target.id==='pa_prod'){const M=dirModel(),v2=e.target.value;$('#pa_new').hidden=v2!=='__new';if(v2!=='__new')$('#pa_prix').value=M.cost[v2]||'';return}const v=e.target.dataset&&e.target.dataset.allv;if(v)document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]').forEach(i=>i.checked=e.target.checked)});
+document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.mv){D.mv=e.target.value;dirRender();return}if(e.target.id==='tk_v'){D.trk={vendor:e.target.value,date:null,pts:null};D.trk.pts=null;dirRender();return}if(e.target.id==='pa_prod'){const M=dirModel(),v2=e.target.value;$('#pa_new').hidden=v2!=='__new';if(v2!=='__new')$('#pa_prix').value=M.cost[v2]||'';return}const v=e.target.dataset&&e.target.dataset.allv;if(v)document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]').forEach(i=>i.checked=e.target.checked)});
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act;
   if(a==='godir'){closeSheet();route='dir';render();if(D.key)dirLoad();}
@@ -1177,6 +1321,10 @@ document.addEventListener('click',async e=>{
     }catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dinventaire'){t.disabled=true;try{const r=await dirCall({action:'inventaire',produit:$('#iv_prod').value,compte:parseFloat(String($('#iv_n').value).replace(',','.')),note:$('#iv_note').value});toast('Comptage enregistré · écart '+(r.ecart>0?'+':'')+fq(+r.ecart)+' caisse(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsupplierpaid'){t.disabled=true;try{await dirCall({action:'supplierPaid',id:+t.dataset.id});toast('Dette fournisseur marquée payée');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dmf'){D.mf[t.dataset.f]=!D.mf[t.dataset.f];dirRender()}
+  else if(a==='dtrack'){const v=$('#tk_v').value,d=$('#tk_date').value;if(!d){toast('Aucune tournée enregistrée pour ce vendeur');return}t.disabled=true;
+    try{const r=await dirCall({action:'track',vendor:v,date:d});D.trk={vendor:v,date:d,pts:r.pts||[]};dirRender()}catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dtrackoff'){D.trk=null;dirRender()}
   else if(a==='dsaveremu'){const remu={};['fixe','taux','taux_accel','marge_min','pct_paye_min','garantie'].forEach(k=>remu[k]=parseFloat(String($('#rm_'+k).value).replace(',','.')));remu.garantie_jusqu_a=$('#rm_garantie_jusqu_a').value;
     try{await dirCall({action:'setRemuneration',remu});toast('Rémunération enregistrée');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dconfirm'||a==='drefuse'){
@@ -1197,6 +1345,7 @@ document.addEventListener('click',async e=>{
 S=load();
 if(S&&!S.sync.url){S.sync.url=SERVER_URL;S.sync.key=SERVER_KEY;save()}
 render();
+if(S&&S.tour&&S.tour.active){if(S.tour.date!==today()){flushTour(true);(S.tours=S.tours||{})[S.tour.date]=S.tour.pts.map(p=>p.slice(0,3));S.tour.active=false;save()}else startWatch()}
 if(S){pullConfig(true);pullDecisions(true);trySync();setTimeout(()=>notifySummary(false),1500)}
 try{if('serviceWorker' in navigator&&location.protocol.startsWith('http')&&window.__PWA__)navigator.serviceWorker.register('sw.js')}catch(e){}
 </script>
