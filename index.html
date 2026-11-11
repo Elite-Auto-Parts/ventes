@@ -259,6 +259,9 @@ const BIG=window.matchMedia?matchMedia('(min-width: 900px)'):{matches:false};
 function setDevice(){document.documentElement.dataset.device=BIG.matches?'laptop':'phone'}
 setDevice();
 try{BIG.addEventListener('change',()=>{setDevice();if(typeof render==='function')render()})}catch(e){}
+/* ---------- PIN gardé haché sur le téléphone (pour réafficher le salaire, même sans internet) ---------- */
+async function hashPin(pin,salt){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(salt+':'+pin));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function rememberPin(pin){try{const salt=[...crypto.getRandomValues(new Uint8Array(8))].map(x=>x.toString(16).padStart(2,'0')).join('');S.pinSalt=salt;S.pinHash=await hashPin(pin,salt);save()}catch(e){}}
 /* ---------- utils ---------- */
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -477,7 +480,7 @@ async function login(){
     const r=await fetch(SERVER_URL+'/functions/v1/portefeuille',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({vendor:setup.pick,pin})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||('Erreur '+r.status));
-    init(j.vendor,j);setup={vendors:setup.vendors,pick:null,err:null,busy:false};render();pullConfig(true);
+    init(j.vendor,j);await rememberPin(pin);setup={vendors:setup.vendors,pick:null,err:null,busy:false};render();pullConfig(true);
     toast(S.clients.length+' clients téléchargés');
   }catch(e){setup.busy=false;setup.err=navigator.onLine?e.message:'Pas de connexion internet';render()}
 }
@@ -552,8 +555,12 @@ function salaryCard(st,obj){
   const sal=salaire(S.remu,ym,st.valide,obj,false),R=sal.R,isCur=ym===today().slice(0,7);
   const ifConf=st.aconf?salaire(S.remu,ym,st.valide+st.aconf,obj,false).total:0;
   const notice=!S.token||S.sync.sessionErr?`<div class="hstack" style="justify-content:space-between;background:var(--warn-soft);border-radius:10px;padding:8px 10px"><small style="color:var(--warn)">Entre ton PIN une fois pour recevoir les paiements confirmés par la caisse.</small><button class="btn sm" data-act="askrelogin">Entrer mon PIN</button></div>`:'';
-  return `<div class="sec-title">Salaire ${isCur?'estimé':''} · ${ymLabel(ym)}</div>
-  <section class="card stack">${notice}
+  const ui=S.salUI||'open',tb=(a,l)=>`<button class="btn sm ghost" data-act="${a}">${l}</button>`;
+  const head=`<div class="sec-title">Salaire ${isCur?'estimé':''} · ${ymLabel(ym)}</div>`;
+  if(ui==='masked')return head+`<section class="card"><div class="hstack" style="justify-content:space-between"><div><b class="num" style="font-family:var(--f-display);font-size:22px;letter-spacing:.15em">•••••• HTG</b><div class="muted" style="font-size:12.5px">Montant masqué</div></div><button class="btn sm sec" data-act="salshow">Afficher avec mon PIN</button></div></section>`;
+  if(ui==='folded')return head+`<section class="card"><div class="hstack" style="justify-content:space-between"><div><b class="num" style="font-family:var(--f-display);font-size:22px">${fmt(sal.total)} HTG</b>${sal.garanti&&sal.total>sal.formule?' <span class="chip c-info">Garantie</span>':''}</div><div class="hstack">${tb('salopen','Déplier ▾')}${tb('salmask','Masquer')}</div></div></section>`;
+  return head+`<section class="card stack">${notice}
+    <div class="hstack" style="justify-content:flex-end;margin-bottom:-6px">${tb('salfold','Replier ▴')}${tb('salmask','Masquer')}</div>
     <div class="hstack" style="justify-content:space-between;align-items:baseline"><b class="num" style="font-family:var(--f-display);font-size:24px">${fmt(sal.total)} HTG</b>${sal.garanti&&sal.total>sal.formule?'<span class="chip c-info">Garantie '+fmt(R.garantie)+' HTG</span>':''}</div>
     ${(()=>{const mx=Math.max(Math.round(obj*1.4),Math.ceil((st.valide+st.aconf)*1.1)),pc=x=>Math.min(100,x/mx*100),brk=sal.garanti&&R.taux>0?Math.ceil((R.garantie-R.fixe)/R.taux):null;
       return `<div><div class="hstack" style="justify-content:space-between;font-size:12.5px"><span><b>${fp(st.valide)} pts</b> validés${st.aconf?` <span class="muted">(+${fp(st.aconf)} à confirmer)</span>`:''}</span><span class="muted">${st.valide>=obj?`<b style="color:var(--ok)">Taux ${String(R.taux_accel).replace('.',',')} HTG débloqué*</b>`:`encore <b>${fp(obj-st.valide)} pts</b> pour passer à ${String(R.taux_accel).replace('.',',')} HTG/pt`}</span></div>
@@ -728,6 +735,21 @@ function csvText(){
 /* ---------- sheet ---------- */
 function openSheet(html){closeSheet();const d=document.createElement('div');d.className='scrim';d.id='scrim';d.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;document.body.appendChild(d)}
 function closeSheet(){const s=$('#scrim');s&&s.remove()}
+function salPinSheet(){
+  openSheet(`<div class="sheet-head"><h2>Afficher mon salaire</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="card stack"><label class="f">PIN de ${esc(S.vendor)}<input id="spin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+  <button class="btn" data-act="salpin">Afficher</button><div id="smsg"></div></div>`);
+  setTimeout(()=>{const i=$('#spin');i&&i.focus()},50);
+}
+async function checkPin(pin){
+  if(S.pinHash&&S.pinSalt&&await hashPin(pin,S.pinSalt)===S.pinHash)return true;
+  if(!navigator.onLine)return S.pinHash?false:null;
+  // PIN changé par la Direction, ou téléphone sans PIN gardé : vérification par le serveur
+  const r=await fetch(SERVER_URL+'/functions/v1/portefeuille',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({vendor:S.vendor,pin})});
+  if(r.ok){const j=await r.json().catch(()=>({}));if(j.token)S.token=j.token;await rememberPin(pin);return true}
+  if(r.status===429)throw new Error("Trop d'essais. Réessaie dans 15 minutes.");
+  return false;
+}
 function reloginSheet(){
   openSheet(`<div class="sheet-head"><h2>Recevoir les confirmations</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="card stack"><p class="muted" style="margin:0;font-size:13px">Entre ton PIN une fois. Tes ventes et tes clients restent sur ce téléphone ; l'app pourra recevoir les paiements confirmés par la caisse.</p>
@@ -786,9 +808,16 @@ document.addEventListener('click',e=>{
       op('client.suivi',{cid:id,...l,next:c.next});toast('Suivi enregistré');clientSheet(id);if(tab!=='sell')renderView();break}
     case 'newclient':newClientSheet();break;
     case 'askrelogin':reloginSheet();break;
+    case 'salfold':S.salUI='folded';save();renderView();break;
+    case 'salopen':S.salUI='open';save();renderView();break;
+    case 'salmask':S.salUI='masked';save();renderView();toast('Salaire masqué');break;
+    case 'salshow':salPinSheet();break;
+    case 'salpin':{const pin=($('#spin').value||'').trim();if(!pin)return;$('#smsg').innerHTML='<span class="muted">Vérification…</span>';
+      checkPin(pin).then(ok=>{if(ok){S.salUI='open';save();closeSheet();renderView()}else $('#smsg').innerHTML='<span style="color:var(--bad)">'+(ok===null?'Connecte-toi à internet une fois pour vérifier ton PIN':'PIN incorrect')+'</span>'})
+      .catch(e=>{$('#smsg').innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'});break}
     case 'relogin':{const pin=($('#rpin').value||'').trim();if(!pin)return;$('#rmsg').innerHTML='<span class="muted">Vérification…</span>';
       fetch(SERVER_URL+'/functions/v1/portefeuille',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({vendor:S.vendor,pin})})
-      .then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{if(!ok)throw new Error(j.error||'Erreur');S.token=j.token;S.sync.sessionErr=null;S.seenDec={};save();closeSheet();toast('Session ouverte');pullDecisions(true);renderView()})
+      .then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{if(!ok)throw new Error(j.error||'Erreur');rememberPin(pin);S.token=j.token;S.sync.sessionErr=null;S.seenDec={};save();closeSheet();toast('Session ouverte');pullDecisions(true);renderView()})
       .catch(e=>{$('#rmsg').innerHTML='<span style="color:var(--bad)">'+esc(navigator.onLine?e.message:'Pas de connexion internet')+'</span>'});break}
     case 'savenew':{const name=$('#nname').value.trim();if(!name){toast('Le nom est obligatoire');return}
       const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null};
