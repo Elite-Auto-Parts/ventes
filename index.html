@@ -426,7 +426,8 @@ async function pullConfig(force){
   if(!force&&S.sync.pulled&&Date.now()-S.sync.pulled<5*60e3)return;
   try{
     const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
-    const [g,o,rm]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h})]);
+    const tmo=(pr)=>Promise.race([pr,new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),8000))]);
+    const [g,o,rm,pp]=await tmo(Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h}),fetch(base+'parametres_publics?select=tel_caisse,nom_caisse',{headers:h})]));
     if(!g.ok||!o.ok)return;
     const rows=await g.json(),objs=await o.json();
     if(Array.isArray(rows)&&rows.length){
@@ -436,7 +437,8 @@ async function pullConfig(force){
     }
     if(Array.isArray(objs))objs.forEach(x=>{S.objectives[x.ym]=+x.points;(S.cibles=S.cibles||{})[x.ym]={rapide:+x.cible_rapide||0,moyenne:+x.cible_moyenne||0,lente:+x.cible_lente||0}});
     try{if(rm&&rm.ok){const x=await rm.json();if(x&&x[0])S.remu=x[0]}}catch(e){}
-    S.sync.pulled=Date.now();save();if(document.getElementById('view'))renderView();
+    try{if(pp&&pp.ok){const x=await pp.json();if(x&&x[0])S.params=x[0]}}catch(e){}
+    S.sync.pulled=Date.now();S.sync.stockAt=Date.now();save();if(document.getElementById('view')&&!document.getElementById('scrim'))renderView();
   }catch(e){}
 }
 // Confirmations / refus de paiement faits par la caisse (Gesmane)
@@ -831,6 +833,22 @@ async function checkPin(pin){
   if(r.status===429)throw new Error("Trop d'essais. Réessaie dans 15 minutes.");
   return false;
 }
+function runAct(a){const b=document.createElement('button');b.dataset.act=a;b.hidden=true;document.body.appendChild(b);b.click();b.remove()}
+function offlineSaleSheet(){
+  const nom=(S.params&&S.params.nom_caisse)||'Gesmane',tel=(S.params&&S.params.tel_caisse)||'';
+  const lines=Object.entries(cart.q).filter(([,q])=>q>0);
+  const age=S.sync.stockAt?Math.round((Date.now()-S.sync.stockAt)/60000):null;
+  openSheet(`<div class="sheet-head"><h2>Vente sans internet</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="card stack" style="background:var(--warn-soft);border-color:transparent"><b style="color:var(--warn)">Le stock n'est pas vérifié</b><span style="font-size:13.5px">Un autre vendeur a peut-être vendu ces caisses. Stock vérifié pour la dernière fois : <b>${age==null?'jamais':age<60?'il y a '+age+' min':'il y a '+Math.round(age/60)+' h'}</b>.</span></div>
+  <div class="card"><div class="rows">${lines.map(([pid,q])=>`<div class="row"><div class="main">${esc(P(pid).name)}</div><div class="end num"><b>${fq(q)}</b> <small class="muted">/ ${fq(avail(pid))} dispo</small></div></div>`).join('')}</div></div>
+  <div class="card stack"><b>1. Active internet</b><span class="muted" style="font-size:13px">Données mobiles ou wifi : l'app vérifie le stock puis enregistre.</span><button class="btn sec" data-act="offnet">J'ai activé internet</button></div>
+  <div class="card stack"><b>2. Ou appelle ${esc(nom)} avant d'enregistrer</b>
+    ${tel?`<div class="phone">${tel.split('/').map(x=>`<code>${esc(x.trim())}</code><a class="btn sm sec" href="tel:${esc(x.trim())}">Appeler</a>`).join('')}</div>`:'<span class="muted" style="font-size:13px">Numéro de la caisse pas encore enregistré par la Direction.</span>'}
+    <label class="hstack" style="font-size:13.5px"><input type="checkbox" id="offconf"> ${esc(nom)} m'a confirmé par téléphone que ces caisses sont disponibles</label>
+    <label class="f">Note (optionnel)<input id="offnote" placeholder="Ex. confirmé à 10h"></label>
+    <button class="btn" data-act="offok">Enregistrer la vente (confirmée par appel)</button><div id="offmsg"></div></div>
+  <button class="btn ghost" data-act="close">Annuler</button>`);
+}
 function reloginSheet(){
   openSheet(`<div class="sheet-head"><h2>Recevoir les confirmations</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="card stack"><p class="muted" style="margin:0;font-size:13px">Entre ton PIN une fois. Tes ventes et tes clients restent sur ce téléphone ; l'app pourra recevoir les paiements confirmés par la caisse.</p>
@@ -872,12 +890,18 @@ document.addEventListener('click',e=>{
     case 'addq':{const a=avail(id),nq=Math.max(0,(cart.q[id]||0)+Number(t.dataset.d));if(nq>a){toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(id).name);cart.q[id]=Math.min(cart.q[id]||0,a)}else cart.q[id]=nq;renderView();break}
     case 'pay':cart.pay=t.dataset.v;renderView();break;
     case 'deliv':cart.deliv=t.dataset.v;renderView();break;
-    case 'savesale':{
+    case 'savesale':{if(!cart||!cart.cid||!Object.values(cart.q).some(q=>q>0))return;
+      if(navigator.onLine){t.disabled=true;toast('Vérification du stock…');cart.offline=null;pullConfig(true).catch(()=>{}).finally(()=>runAct('savesale_go'))}
+      else offlineSaleSheet();break}
+    case 'offnet':if(navigator.onLine){closeSheet();runAct('savesale')}else $('#offmsg').innerHTML='<span style="color:var(--bad)">Toujours pas de connexion internet.</span>';break;
+    case 'offok':{if(!$('#offconf').checked){$('#offmsg').innerHTML='<span style="color:var(--bad)">Coche la case quand la caisse a confirmé le stock.</span>';return}
+      const nom=(S.params&&S.params.nom_caisse)||'Gesmane';cart.offline={mode:'appel',avec:nom,stockAt:S.sync.stockAt?new Date(S.sync.stockAt).toISOString():null,note:($('#offnote').value||'').trim()};closeSheet();runAct('savesale_go');break}
+    case 'savesale_go':{
       const lines=Object.entries(cart.q).filter(([,q])=>q>0).map(([pid,qty])=>({pid,qty,price:P(pid).price,pts:P(pid).pts}));
       if(!cart.cid||!lines.length)return;
-      const over=lines.find(l=>l.qty>avail(l.pid));if(over){toast('Stock insuffisant pour '+P(over.pid).name+' : '+fq(avail(over.pid))+' disponible(s)');renderView();return}
+      const over=lines.find(l=>l.qty>avail(l.pid));if(over){lines.forEach(l=>{if(l.qty>avail(l.pid))cart.q[l.pid]=Math.floor(avail(l.pid)*2)/2});toast('Le stock a changé : '+P(over.pid).name+' n\'a plus que '+fq(avail(over.pid))+' caisse(s). Quantité ajustée, vérifie et enregistre.');renderView();return}
       const date=$('#cdate').value||today();
-      const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString(),gps:recentFix()};
+      const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString(),gps:recentFix(),offline:cart.offline||undefined};
       S.orders.push(o);const c=C(cart.cid);if(c.status==='prospect'){c.status='client';op('client.update',{id:c.id,status:'client'})}
       op('vente.creee',o);
       const pts=orderPts(o);cart=null;
@@ -1194,6 +1218,7 @@ function dirControles(M,agg){
   const live=rows.filter(a=>a.ym===cur&&a.src.has('App')&&a.pts>0&&lastDays(cur,5)(t));
   return card('Points faits les 5 derniers jours du mois','Dernier mois terminé, plus tous les mois au-dessus de 35 %. Au-dessus de 35 % : vérifier que les clients n\'ont pas été « remplis » pour atteindre l\'objectif (regarder s\'ils recommandent le mois suivant).',finHtml+(live.length?`<small class="muted">Mois en cours : ${live.map(a=>esc(a.v)+' '+Math.round(a.last5/a.pts*100)+' %').join(' · ')}</small>`:''))
    +card('Ventes saisies en retard','Ventes saisies plus de 3 jours après la date de vente (60 derniers jours). À vérifier : une vente du mois passé ne doit pas compter dans le mois en cours.',tardHtml)
+   +card('Ventes enregistrées sans internet','Ventes des 60 derniers jours faites hors ligne, avec la confirmation par téléphone de la caisse. À comparer avec le stock si un écart apparaît.',(()=>{const off=M.orders.filter(o=>o.offline&&days(o.date,t)<=60).sort((a,b)=>a.date<b.date?1:-1);return off.length?`<div class="rows">${off.map(o=>`<div class="row"><div class="main"><b>${esc(o.vend)} · ${esc(M.names[o.cid]||o.cname||o.cid)}</b><small>${dShort(o.date)} · confirmé par appel avec ${esc(o.offline.avec||'la caisse')}${o.offline.note?' · '+esc(o.offline.note):''}</small></div><div class="end num"><b>${fq(o.lines.reduce((s2,l)=>s2+(+l.qty||0),0))}</b> <small class="muted">caisses</small></div></div>`).join('')}</div>`:'<div class="empty">Aucune vente hors ligne.</div>'})())
    +card('Beaucoup de lentes, peu de marge','Agents avec plus de 50 % des points en huiles lentes et moins de 100 000 HTG de marge payée, deux mois de suite. C\'est un sujet de discussion au comité, pas une sanction.',sigHtml);
 }
 // Encaissements : la caisse (Gesmane) confirme ou refuse les paiements déclarés par les vendeurs
@@ -1271,6 +1296,9 @@ function dirRender(){
     <label class="f">Nom<input id="vname" list="vlist" autocomplete="off"><datalist id="vlist">${vs.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
     <label class="f">PIN (4 à 8 chiffres)<input id="vpin" inputmode="numeric" autocomplete="off" maxlength="8"></label>
     <button class="btn" data-act="dsetpin">Enregistrer</button></section>
+    <section class="card stack"><b>Caisse à appeler pour les ventes sans internet</b><p class="muted" style="margin:0;font-size:12.5px">Quand un vendeur n'a pas internet, l'app lui demande d'activer internet ou d'appeler ce numéro pour confirmer le stock avant d'enregistrer.</p>
+    <div class="grid2"><label class="f">Nom<input id="pc_nom" value="${esc((D.data&&D.data.parametres&&D.data.parametres.nom_caisse)||'Gesmane')}"></label><label class="f">Téléphone<input id="pc_tel" inputmode="tel" value="${esc((D.data&&D.data.parametres&&D.data.parametres.tel_caisse)||'')}" placeholder="3xxx xxxx"></label></div>
+    <button class="btn sec" data-act="dsetparams">Enregistrer</button></section>
     <section class="card stack"><b>Clé Direction</b><p class="muted" style="margin:0;font-size:13px">Choisis une clé facile à retenir pour toi, au moins 8 caractères (par exemple une petite phrase). L'ancienne clé ne marchera plus, sur tous les appareils. Donne la nouvelle clé seulement à Steve, Abenson et Gesmane.</p>
     <label class="f">Nouvelle clé<input id="nk1" type="password" autocomplete="new-password"></label>
     <label class="f">Répéter la nouvelle clé<input id="nk2" type="password" autocomplete="new-password"></label>
@@ -1330,6 +1358,7 @@ document.addEventListener('click',async e=>{
   else if(a==='dsetdispo'||a==='dsetdispoall'){const pid=$('#dp_prod').value,r=(dirModel().grid[pid]||{}),n=a==='dsetdispoall'?Math.max(0,(+r.stock||0)-(+r.engage||0)):parseFloat(String($('#dp_n').value).replace(',','.'));
     if(!(n>=0)){toast('Écris le nombre de caisses disponibles');return}t.disabled=true;
     try{const res=await dirCall({action:'setDispo',produit:pid,dispo:n});toast('Disponible vendeurs : '+fq(Math.max(0,(+r.stock||0)-(+res.reserve||0)-(+r.engage||0)))+' caisse(s) · réserve '+fq(+res.reserve||0));dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dsetparams'){try{await dirCall({action:'setParams',nom_caisse:$('#pc_nom').value,tel_caisse:$('#pc_tel').value});toast('Enregistré : les téléphones le recevront à leur prochaine connexion');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dinventaire'){t.disabled=true;try{const r=await dirCall({action:'inventaire',produit:$('#iv_prod').value,compte:parseFloat(String($('#iv_n').value).replace(',','.')),note:$('#iv_note').value});toast('Comptage enregistré · écart '+(r.ecart>0?'+':'')+fq(+r.ecart)+' caisse(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsupplierpaid'){t.disabled=true;try{await dirCall({action:'supplierPaid',id:+t.dataset.id});toast('Dette fournisseur marquée payée');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dmf'){D.mf[t.dataset.f]=!D.mf[t.dataset.f];dirRender()}
