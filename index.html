@@ -352,7 +352,7 @@ const DELAI=14;
 const CAT={rapide:['Rapide','c-ok'],moyenne:['Moyenne','c-warn'],lente:['Lente','c-bad']};
 const catChip=c=>CAT[c]?`<span class="chip ${CAT[c][1]}" style="font-size:10.5px">${CAT[c][0]}</span>`:'';
 const CORDER={lente:0,moyenne:1,rapide:2};
-const CIB0={rapide:120,moyenne:90,lente:20};
+const CIB0={rapide:120,moyenne:90,lente:45};
 // Rémunération : fixe + points × taux ; au-delà de l'objectif, taux accéléré si conditions ; garantie pendant la transition
 const REMU0={fixe:15000,taux:11.5,taux_accel:17,marge_min:125000,pct_paye_min:90,garantie:20000,garantie_jusqu_a:'2026-12'};
 function salaire(R,ym,pts,obj,accelOk){R={...REMU0,...(R||{})};['fixe','taux','taux_accel','garantie','marge_min','pct_paye_min'].forEach(k=>R[k]=+R[k]);
