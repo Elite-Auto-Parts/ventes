@@ -880,20 +880,12 @@ function alertsView(){
 function settingsSheet(){
   const o=S.outbox.length;
   openSheet(`<div class="sheet-head"><h2>Paramètres</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
-  <button class="btn ghost" data-act="godir">Espace Direction</button>
-  <div class="card stack"><b>Synchronisation</b>
-   <p class="muted" style="margin:0;font-size:13px">Chaque vente, paiement ou suivi est gardé sur le téléphone, puis envoyé au serveur de la Direction dès qu'il y a internet. ${o} opération(s) en attente d'envoi.${S.sync.last?' Dernier envoi : '+new Date(S.sync.last).toLocaleString('fr-FR')+'.':''}${S.sync.err?' <span style="color:var(--bad)">'+esc(S.sync.err)+'</span>':''}</p>
-   <label class="f">Adresse du serveur<input id="surl" value="${esc(S.sync.url)}" placeholder="https://xxxx.supabase.co"></label>
-   <label class="f">Clé d'accès<input id="skey" value="${esc(S.sync.key)}" placeholder="clé publique (anon)"></label>
-   <button class="btn sec" data-act="savesync">Enregistrer et envoyer</button></div>
-  <div class="card stack"><b>Export pour la Direction</b>
-   <p class="muted" style="margin:0;font-size:13px">Lignes de vente au format de la « Liste Commande » (Auto Parts, Date, Vendeur, Article, Quantité, Mode paiement, Statut paiement), à coller dans Excel.</p>
-   <div class="hstack"><button class="btn sec" data-act="csv">Télécharger CSV</button><button class="btn ghost" data-act="csvcopy">Copier</button></div></div>
-  <div class="card stack"><b>Objectif du mois</b>
-   <label class="f">Objectif ${MOIS[+ym.slice(5)-1]} (points)<input id="obj" type="number" inputmode="numeric" value="${objective(ym)}"></label>
-   <button class="btn sec" data-act="saveobj">Enregistrer</button></div>
-  <div class="card stack"><b>Appareil</b><span class="muted" style="font-size:13px">Affichage : ${BIG.matches?'ordinateur (menu à gauche)':'téléphone (menu en bas)'} · Vendeur : ${esc(S.vendor)} · ${S.clients.length} clients · ${S.orders.length} commandes</span>
-   <button class="btn ghost" data-act="askreset">Changer de vendeur / effacer les données</button><div id="resetbox"></div></div>`);
+  <div class="card stack"><b>Envoi des ventes</b>
+   <p class="muted" style="margin:0;font-size:13px">${o?`<b style="color:var(--warn)">${o} opération(s) pas encore envoyée(s).</b> Elles partiront dès qu'il y aura internet.`:'Tout est envoyé à Elite.'}${S.sync.last?' Dernier envoi : '+new Date(S.sync.last).toLocaleString('fr-FR')+'.':''}${S.sync.err?' <span style="color:var(--bad)">'+esc(S.sync.err)+'</span>':''}</p>
+   ${o?'<button class="btn sec" data-act="sendnow">Envoyer maintenant</button>':''}</div>
+  <div class="card stack"><b>Mon compte</b><span class="muted" style="font-size:13px">${esc(S.vendor)} · ${S.clients.length} clients</span>
+   <button class="btn ghost" data-act="askreset">Changer de vendeur / effacer les données</button><div id="resetbox"></div></div>
+  <button class="btn ghost" data-act="godir" style="font-size:12.5px;opacity:.7">Espace Direction</button>`);
 }
 function csvText(){
   const rows=[['Auto Parts','Date Livraison','Vendeur','Article','Quantite','Statut Commande','Mode paiement','Statut Paiment','Prix Vente','Total Vente','Points']];
@@ -1030,6 +1022,7 @@ document.addEventListener('click',e=>{
       S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');checkNew(c);
       if(wantGps)getPos().then(f=>{c.lat=f[0];c.lng=f[1];c.acc=f[3];c.gpsAt=new Date().toISOString();save();op('client.update',{id:c.id,lat:c.lat,lng:c.lng,acc:c.acc,gpsAt:c.gpsAt});toast('Position GPS enregistrée (±'+c.acc+' m)')}).catch(e=>toast(e.message));
       if(tab==='sell'){cart.cid=c.id}renderView();break}
+    case 'sendnow':S.sync.err=null;save();trySync();toast(navigator.onLine?'Envoi en cours':'Pas d\'internet : envoi au retour du réseau');closeSheet();break;
     case 'savesync':S.sync.url=$('#surl').value.trim()||SERVER_URL;S.sync.key=$('#skey').value.trim()||SERVER_KEY;S.sync.err=null;S.sync.pulled=0;save();trySync();toast(navigator.onLine?'Envoi en cours':'Enregistré. Envoi au retour du réseau');settingsSheet();break;
     case 'csv':{try{const b=new Blob(['﻿'+csvText()],{type:'text/csv'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download='ventes-'+S.vendor+'-'+today()+'.csv';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}catch(e){toast('Téléchargement impossible ici, utilise Copier')}break}
     case 'csvcopy':navigator.clipboard.writeText(csvText()).then(()=>toast('Copié. Colle dans Excel'),()=>toast('Copie refusée par le navigateur'));break;
