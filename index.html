@@ -552,7 +552,67 @@ function setupView(){
 }
 
 /* ---------- Accueil ---------- */
+let homeV='jour';
 function homeView(){
+  const seg=`<div class="seg"><button data-act="homev" data-v="jour" class="${homeV==='jour'?'on':''}">Aujourd'hui</button><button data-act="homev" data-v="perf" class="${homeV==='perf'?'on':''}">Ma performance</button></div>`;
+  return seg+(homeV==='perf'?perfView():homeDay());
+}
+/* ---------- Ma performance : jour par jour, semaine, mois ---------- */
+function dayStats(d){const r={v:0,a:0,cases:0,amt:0,cl:new Set()};S.orders.forEach(o=>{if(o.date!==d||o.status==='annulee')return;const st=ptsState(o),p2=orderPts(o);if(st==='valide')r.v+=p2;else if(st==='attente'||st==='aconfirmer')r.a+=p2;r.cases+=orderCases(o);r.amt+=orderAmt(o);r.cl.add(o.cid)});r.pts=r.v+r.a;return r}
+function monthPerf(ym2){const os=S.orders.filter(o=>o.date.slice(0,7)===ym2&&o.status!=='annulee');const r={v:0,cases:0,cR:0,cM:0,cL:0,amt:0,cl:new Set(),elig:0,ok:0};
+  os.forEach(o=>{const st=ptsState(o);if(st==='valide'){r.v+=orderPts(o);r.cl.add(o.cid)}r.cases+=orderCases(o);r.amt+=orderAmt(o);o.lines.forEach(l=>{const c=P(l.pid).categorie||'moyenne';r['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=l.qty});
+    if(o.paidAt||days(o.date,today())>DELAI){r.elig++;if(st==='valide')r.ok++}});r.pct14=r.elig?r.ok/r.elig*100:null;return r}
+function trend(cur,prev,unit){if(prev==null)return '';const d=cur-prev;if(Math.abs(d)<0.01)return '<small class="muted">= pareil</small>';return `<small style="color:var(${d>0?'--ok':'--bad'});font-weight:600">${d>0?'▲ +':'▼ '}${unit==='HTG'?fmt(d):fp(d)}</small>`}
+function perfView(){
+  const t=today(),obj=objective(t.slice(0,7)),perDay=Math.round(obj/26),cur=t.slice(0,7);
+  const D0=dayStats(t),D1=dayStats(addDays(t,-1)),D7=dayStats(addDays(t,-7));
+  const tile=(label,f,unit)=>`<div><small class="muted">${label}</small><b class="num" style="display:block;font-family:var(--f-display);font-size:20px">${unit==='HTG'?fmt(f(D0)):fp(f(D0))}</b>${trend(f(D0),f(D1),unit)} <small class="muted">vs hier (${unit==='HTG'?fmt(f(D1)):fp(f(D1))})</small><small class="muted" style="display:block">même jour sem. passée : ${unit==='HTG'?fmt(f(D7)):fp(f(D7))}</small></div>`;
+  // 14 derniers jours
+  const ds=[...Array(14)].map((_,i)=>addDays(t,i-13)).map(d=>({d,...dayStats(d)}));
+  const mx=Math.max(perDay*1.4,...ds.map(x=>x.pts))||1,W=560,H=170,pl=34,pb=26,pt=10,bw=(W-pl-8)/14,y=v=>pt+(H-pt-pb)*(1-v/mx);
+  const ticks=[0,Math.round(mx/2),Math.round(mx)];
+  const bars=ds.map((x,i)=>{const X=pl+i*bw+2,w=bw-4,hv=(H-pt-pb)*x.v/mx,ha=(H-pt-pb)*x.a/mx,base=H-pb,dd=parse(x.d),lab=dd.getDate(),wk=dd.getDay();
+    return `<g><title>${dShort(x.d)} : ${fp(x.v)} pts validés${x.a?' + '+fp(x.a)+' en attente':''} · ${fq(x.cases)} caisses</title>
+      ${x.v?`<rect x="${X}" y="${base-hv}" width="${w}" height="${Math.max(0,hv-1)}" rx="3" fill="var(--brand)"></rect>`:''}
+      ${x.a?`<rect x="${X}" y="${base-hv-ha}" width="${w}" height="${Math.max(0,ha-2)}" rx="3" fill="var(--brand)" fill-opacity=".35"></rect>`:''}
+      <rect x="${X-1}" y="${pt}" width="${w+2}" height="${H-pt-pb}" fill="transparent"></rect>
+      <text x="${X+w/2}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="var(${x.d===t?'--fg':'--muted'})" font-weight="${x.d===t?700:400}">${wk===0?'D':lab}</text></g>`}).join('');
+  const chart=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Points par jour sur 14 jours" style="display:block;max-width:100%">
+    ${ticks.map(v=>`<line x1="${pl}" x2="${W-6}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"></line><text x="${pl-6}" y="${y(v)+3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${v}</text>`).join('')}
+    ${bars}
+    <line x1="${pl}" x2="${W-6}" y1="${y(perDay)}" y2="${y(perDay)}" stroke="var(--ok)" stroke-width="2" stroke-dasharray="5 4"></line>
+</svg>`;
+  const green=ds.filter(x=>x.pts>=perDay).length;let streak=0;for(let i=ds.length-1;i>=0;i--){if(ds[i].pts>=perDay)streak++;else if(ds[i].d!==t)break}
+  // semaines du mois
+  const [Y,Mo]=cur.split('-').map(Number),dim=new Date(Y,Mo,0).getDate(),wk=[];for(let s0=1;s0<=dim;s0+=7){const e=Math.min(dim,s0+6),tgt=Math.round(obj*(e-s0+1)/dim);let v=0,a=0;for(let d=s0;d<=e;d++){const x=dayStats(cur+'-'+String(d).padStart(2,'0'));v+=x.v;a+=x.a}wk.push({s0,e,tgt,v,a})}
+  const dayN=new Date().getDate();
+  // mois en cours vs mois passé à la même date
+  const pm=prevYm(cur),sameDay=pm+'-'+String(Math.min(dayN,new Date(Y,Mo-1,0).getDate())).padStart(2,'0');
+  const toDate=(m0,last)=>{let v=0,c=0;const cl=new Set();S.orders.forEach(o=>{if(o.date.slice(0,7)!==m0||o.date>last||o.status==='annulee')return;if(ptsState(o)==='valide'){v+=orderPts(o);cl.add(o.cid)}c+=orderCases(o)});return {v,c,cl:cl.size}};
+  const nowM=toDate(cur,t),prevM=toDate(pm,sameDay);
+  // historique mensuel
+  const months=[...new Set(S.orders.map(o=>o.date.slice(0,7)))].sort().reverse().slice(0,6);
+  const td='style="padding:6px 5px;text-align:center;white-space:nowrap"';
+  return `<section class="card stack"><b>Aujourd'hui, comparé à hier</b>
+    <div class="kv" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">${tile('Points',x=>x.pts)}${tile('Caisses',x=>x.cases)}${tile('Ventes (HTG)',x=>x.amt,'HTG')}${tile('Clients servis',x=>x.cl.size)}</div>
+    <small class="muted">Points du jour = validés + en attente de paiement ou de confirmation.</small></section>
+  <div class="layout2"><div class="col-a">
+  <section class="card stack"><div class="hstack" style="justify-content:space-between"><b>14 derniers jours</b><span class="hstack" style="gap:10px"><span class="lg"><i style="background:var(--brand)"></i>validés</span><span class="lg"><i style="background:var(--brand);opacity:.35"></i>en attente</span><span class="lg"><i style="background:none;border-top:2px dashed var(--ok);border-radius:0;height:0;width:14px"></i>objectif ${perDay} pts/jour</span></span></div>
+    ${chart}
+    <div class="hstack" style="gap:8px"><span class="chip ${green>=10?'c-ok':green>=6?'c-warn':'c-bad'}">${green} jour(s) sur 14 à l'objectif</span>${streak?`<span class="chip c-ok">Série en cours : ${streak} jour(s)</span>`:''}</div>
+    <details><summary class="muted" style="font-size:12.5px;cursor:pointer">Voir les chiffres</summary><div class="rows">${ds.slice().reverse().map(x=>`<div class="row"><div class="main">${dShort(x.d)}</div><div class="end num">${fp(x.pts)} pts · ${fq(x.cases)} caisses</div></div>`).join('')}</div></details></section>
+  <section class="card stack"><b>Semaines de ${MOIS[Mo-1]}</b><div class="rows">${wk.map((w,i)=>{const pc=Math.min(100,(w.v+w.a)/Math.max(1,w.tgt)*100),past=w.e<dayN,curW=dayN>=w.s0&&dayN<=w.e;return `<div class="row"><div class="main"><b>Semaine ${i+1} <small class="muted" style="font-weight:400">(${w.s0}-${w.e})</small>${curW?' <span class="chip c-info" style="font-size:10.5px">en cours</span>':''}</b><div class="mini-bar"><span class="${pc>=100?'done':''}" style="width:${pc}%"></span></div></div><div class="end num"><b>${fp(w.v+w.a)}</b> <small class="muted">/ ${w.tgt}</small>${past?`<div>${w.v+w.a>=w.tgt?'<span class="chip c-ok" style="font-size:10.5px">atteint</span>':'<span class="chip c-bad" style="font-size:10.5px">manqué</span>'}</div>`:''}</div></div>`}).join('')}</div></section>
+  </div><div class="col-b">
+  <section class="card stack"><b>${MOIS[Mo-1][0].toUpperCase()+MOIS[Mo-1].slice(1)} contre ${MOIS[+pm.slice(5)-1]}, à la même date</b>
+    <div class="kv"><div><b class="num">${fp(nowM.v)}</b><small>pts validés (${fp(prevM.v)})</small><span style="display:block">${trend(nowM.v,prevM.v)}</span></div><div><b class="num">${fq(nowM.c)}</b><small>caisses (${fq(prevM.c)})</small><span style="display:block">${trend(nowM.c,prevM.c)}</span></div><div><b class="num">${nowM.cl}</b><small>clients payés (${prevM.cl})</small><span style="display:block">${trend(nowM.cl,prevM.cl)}</span></div></div>
+    <small class="muted">Entre parenthèses : le mois passé du 1er au ${dShort(sameDay)}.</small></section>
+  <section class="card"><b>Mes mois</b><div style="overflow-x:auto;margin-top:6px"><table class="num" style="border-collapse:collapse;width:100%;min-width:520px;font-size:13px">
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Mois</th><th>Pts validés</th><th>% objectif</th><th>Caisses R / M / L</th><th>Payé sous 14 j</th><th>Clients payés</th><th>Salaire (formule)</th></tr></thead><tbody>
+    ${months.map(m0=>{const r=monthPerf(m0),o2=objective(m0),pc=r.v/o2*100;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${ymLabel(m0)}</td><td ${td}><b class="pts">${fp(r.v)}</b></td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}>${fq(r.cR)} / ${fq(r.cM)} / ${fq(r.cL)}</td><td ${td}>${r.pct14==null?'-':Math.round(r.pct14)+' %'}</td><td ${td}>${r.cl.size}</td><td ${td}>${fmt(salaire(S.remu,m0,r.v,o2,false).total)}</td></tr>`}).join('')}
+    </tbody></table></div><small class="muted">Avant novembre 2026, les ventes viennent du fichier Excel ; un crédit marqué « Payé » y compte comme payé à temps.</small></section>
+  </div></div>`;
+}
+function homeDay(){
   const st=monthStats(ym),obj=objective(ym),pct=Math.min(100,st.valide/obj*100),pctAll=Math.min(100,(st.valide+st.attente)/obj*100);
   const [y,m]=ym.split('-').map(Number);const isCur=ym===today().slice(0,7);
   const daysInM=new Date(y,m,0).getDate(),dayN=isCur?new Date().getDate():daysInM;
@@ -879,6 +939,7 @@ document.addEventListener('click',e=>{
     case 'retryv':setup.err=null;setup.vendors=null;render();break;
     case 'settings':settingsSheet();break;
     case 'close':closeSheet();break;
+    case 'homev':homeV=t.dataset.v;renderView();scrollTo(0,0);break;
     case 'mprev':{const [y,m]=ym.split('-').map(Number);const d=new Date(y,m-2,1);ym=iso(d).slice(0,7);renderView();break}
     case 'mnext':{const [y,m]=ym.split('-').map(Number);const d=new Date(y,m,1);ym=iso(d).slice(0,7);renderView();break}
     case 'vplan':{const k=today();S.visitsPlanned[k]=Math.max(0,(S.visitsPlanned[k]||0)+Number(t.dataset.d));save();renderView();break}
