@@ -429,7 +429,7 @@ async function pullConfig(force){
   try{
     const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
     const tmo=(pr)=>Promise.race([pr,new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),8000))]);
-    const [g,o,rm,pp]=await tmo(Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h}),fetch(base+'parametres_publics?select=tel_caisse,nom_caisse,visites_jour',{headers:h})]));
+    const [g,o,rm,pp]=await tmo(Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente,nouveaux_clients',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h}),fetch(base+'parametres_publics?select=tel_caisse,nom_caisse,visites_jour',{headers:h})]));
     if(!g.ok||!o.ok)return;
     const rows=await g.json(),objs=await o.json();
     if(Array.isArray(rows)&&rows.length){
@@ -437,7 +437,7 @@ async function pullConfig(force){
       rows.forEach(r=>{const p=S.products.find(x=>x.id===r.id);const v={id:r.id,name:r.name,pts:+r.pts,price:+r.price,combo:+r.combo,stock:+r.stock,reserve:+r.reserve||0,engage:+r.engage||0,sort:+r.sort,categorie:r.categorie,active:true};if(p)Object.assign(p,v);else S.products.push(v)});
       S.products.forEach(p=>{if(!act.has(p.id))p.active=false});
     }
-    if(Array.isArray(objs))objs.forEach(x=>{S.objectives[x.ym]=+x.points;(S.cibles=S.cibles||{})[x.ym]={rapide:+x.cible_rapide||0,moyenne:+x.cible_moyenne||0,lente:+x.cible_lente||0}});
+    if(Array.isArray(objs))objs.forEach(x=>{S.objectives[x.ym]=+x.points;(S.cibles=S.cibles||{})[x.ym]={rapide:+x.cible_rapide||0,moyenne:+x.cible_moyenne||0,lente:+x.cible_lente||0};(S.cibNew=S.cibNew||{})[x.ym]=x.nouveaux_clients!=null?+x.nouveaux_clients:10});
     try{if(rm&&rm.ok){const x=await rm.json();if(x&&x[0])S.remu=x[0]}}catch(e){}
     try{if(pp&&pp.ok){const x=await pp.json();if(x&&x[0])S.params=x[0]}}catch(e){}
     S.sync.pulled=Date.now();S.sync.stockAt=Date.now();save();if(document.getElementById('view')&&!document.getElementById('scrim'))renderView();
@@ -457,12 +457,17 @@ async function pullDecisions(force){
       S.seenDec=S.seenDec||{};let nC=0,nR=0;
       j.decisions.forEach(d=>{const k=d.id+'|'+d.statut+'|'+d.at;if(S.seenDec[k])return;S.seenDec[k]=1;const o=S.orders.find(x=>x.id===d.id);if(!o)return;
         if(d.statut==='confirme'){o.confirmedAt=d.at;o.refusedAt=null;nC++}else{o.paidAt=null;o.confirmedAt=null;o.refusedAt=d.at;nR++}});
+      if(Array.isArray(j.nouveaux)){S.nouveaux=j.nouveaux;S.nouveauxAt=new Date().toISOString()}
       S.sync.decAt=Date.now();S.sync.sessionErr=null;save();
       if(nC||nR){if(document.getElementById('view'))renderView();toast([nC?nC+' paiement(s) confirmé(s) par la caisse':'',nR?nR+' refusé(s)':''].filter(Boolean).join(' · '))}
     }
   }catch(e){}
   pullingDec=false;
 }
+// Vérifie auprès du serveur si ce client a déjà commandé chez Elite (n'importe quel vendeur)
+async function checkNew(c){if(!S.token||!navigator.onLine)return;try{
+  const r=await fetch(SERVER_URL+'/functions/v1/vendeur-sync',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({token:S.token,action:'check',nom:c.name,tel:c.phone,cid:c.id})});
+  const j=await r.json().catch(()=>({}));if(r.ok&&j.connu){c.connu=1;save();setTimeout(()=>toast('Attention : « '+c.name+' » a déjà commandé chez Elite. Il ne comptera pas comme nouveau client.'),1800);if(document.getElementById('view'))renderView()}}catch(e){}}
 async function trySync(){
   pullConfig(false);pullDecisions(false);
   if(syncing||!navigator.onLine||!S||!S.sync.url||!S.sync.key||!S.outbox.length)return;
@@ -563,6 +568,19 @@ function monthPerf(ym2){const os=S.orders.filter(o=>o.date.slice(0,7)===ym2&&o.s
   os.forEach(o=>{const st=ptsState(o);if(st==='valide'){r.v+=orderPts(o);r.cl.add(o.cid)}r.cases+=orderCases(o);r.amt+=orderAmt(o);o.lines.forEach(l=>{const c=P(l.pid).categorie||'moyenne';r['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=l.qty});
     if(o.paidAt||days(o.date,today())>DELAI){r.elig++;if(st==='valide')r.ok++}});r.pct14=r.elig?r.ok/r.elig*100:null;return r}
 function trend(cur,prev,unit){if(prev==null)return '';const d=cur-prev;if(Math.abs(d)<0.01)return '<small class="muted">= pareil</small>';return `<small style="color:var(${d>0?'--ok':'--bad'});font-weight:600">${d>0?'▲ +':'▼ '}${unit==='HTG'?fmt(d):fp(d)}</small>`}
+// Nouveaux clients Elite : 1re commande jamais passée chez Elite (tous vendeurs) ; vérifié par le serveur
+const NC0=10;
+function cibleNew(m0){return S.cibNew&&S.cibNew[m0]!=null?S.cibNew[m0]:NC0}
+function newCli(m0){const l=(S.nouveaux||[]).filter(x=>x.ym===m0),ids=new Set((S.nouveaux||[]).map(x=>x.sale)),seen=new Set(),pend=[];
+  S.orders.filter(o=>o.src==='app'&&o.date.slice(0,7)===m0&&o.status!=='annulee'&&!ids.has(o.id)).sort((a,b)=>a.date<b.date?-1:1).forEach(o=>{const c=C(o.cid);if(!c||!c.app||c.connu||seen.has(o.cid))return;
+    if(S.nouveauxAt&&(S.orders.some(x=>x.cid===o.cid&&ids.has(x.id))||(o.createdAt||'')<S.nouveauxAt&&!S.outbox.some(x=>x.payload&&x.payload.id===o.id)))return;seen.add(o.cid);pend.push({nom:c.name,date:o.date})});
+  return {ok:l.filter(x=>x.paye),att:l.filter(x=>!x.paye),pend}}
+function newCliCard(m0){const n=newCli(m0),t=cibleNew(m0),pc=t?Math.min(100,n.ok.length/t*100):100,pa=t?Math.min(100,(n.ok.length+n.att.length+n.pend.length)/t*100):100;
+  const li=[...n.ok.map(x=>[x,'<span class="chip c-ok" style="font-size:10.5px">payé</span>']),...n.att.map(x=>[x,'<span class="chip c-warn" style="font-size:10.5px">attente paiement</span>']),...n.pend.map(x=>[x,'<span class="chip c-info" style="font-size:10.5px">à vérifier</span>'])];
+  return `<div class="hstack" style="justify-content:space-between"><span class="num"><b class="pts" style="font-size:20px">${n.ok.length}</b> / ${t} nouveaux clients</span><span class="chip ${n.ok.length>=t?'c-ok':'c-mute'}">${n.ok.length>=t?'cible atteinte':'encore '+(t-n.ok.length)}</span></div>
+  <div class="bar" style="height:10px;background:var(--line)"><em style="width:${pa}%;background:var(--brand);opacity:.35"></em><span style="width:${pc}%;background:var(--brand)"></span></div>
+  ${li.length?`<div class="rows">${li.map(([x,ch])=>`<div class="row"><div class="main"><span style="font-weight:600">${esc(x.nom)}</span><small style="display:block">1re commande le ${dShort(x.date)}</small></div><div class="end">${ch}</div></div>`).join('')}</div>`:''}
+  <small class="muted">Compte seulement un client qui n'a <b>jamais commandé chez Elite</b>, avec aucun vendeur (vérifié sur tout l'historique). Il compte quand sa 1re commande est payée et confirmée par la caisse.</small>`}
 function perfView(){
   const t=today(),obj=objective(t.slice(0,7)),perDay=Math.round(obj/26),cur=t.slice(0,7);
   const D0=dayStats(t),D1=dayStats(addDays(t,-1)),D7=dayStats(addDays(t,-7));
@@ -607,8 +625,8 @@ function perfView(){
     <div class="kv"><div><b class="num">${fp(nowM.v)}</b><small>pts validés (${fp(prevM.v)})</small><span style="display:block">${trend(nowM.v,prevM.v)}</span></div><div><b class="num">${fq(nowM.c)}</b><small>caisses (${fq(prevM.c)})</small><span style="display:block">${trend(nowM.c,prevM.c)}</span></div><div><b class="num">${nowM.cl}</b><small>clients payés (${prevM.cl})</small><span style="display:block">${trend(nowM.cl,prevM.cl)}</span></div></div>
     <small class="muted">Entre parenthèses : le mois passé du 1er au ${dShort(sameDay)}.</small></section>
   <section class="card"><b>Mes mois</b><div style="overflow-x:auto;margin-top:6px"><table class="num" style="border-collapse:collapse;width:100%;min-width:520px;font-size:13px">
-    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Mois</th><th>Pts validés</th><th>% objectif</th><th>Caisses R / M / L</th><th>Payé sous 14 j</th><th>Clients payés</th><th>Salaire (formule)</th></tr></thead><tbody>
-    ${months.map(m0=>{const r=monthPerf(m0),o2=objective(m0),pc=r.v/o2*100;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${ymLabel(m0)}</td><td ${td}><b class="pts">${fp(r.v)}</b></td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}>${fq(r.cR)} / ${fq(r.cM)} / ${fq(r.cL)}</td><td ${td}>${r.pct14==null?'-':Math.round(r.pct14)+' %'}</td><td ${td}>${r.cl.size}</td><td ${td}>${fmt(salaire(S.remu,m0,r.v,o2,false).total)}</td></tr>`}).join('')}
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Mois</th><th>Pts validés</th><th>% objectif</th><th>Caisses R / M / L</th><th>Payé sous 14 j</th><th>Clients payés</th><th>Nouveaux clients</th><th>Salaire (formule)</th></tr></thead><tbody>
+    ${months.map(m0=>{const r=monthPerf(m0),o2=objective(m0),pc=r.v/o2*100;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${ymLabel(m0)}</td><td ${td}><b class="pts">${fp(r.v)}</b></td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}>${fq(r.cR)} / ${fq(r.cM)} / ${fq(r.cL)}</td><td ${td}>${r.pct14==null?'-':Math.round(r.pct14)+' %'}</td><td ${td}>${r.cl.size}</td><td ${td}>${m0<'2026-11'?'-':newCli(m0).ok.length+' / '+cibleNew(m0)}</td><td ${td}>${fmt(salaire(S.remu,m0,r.v,o2,false).total)}</td></tr>`}).join('')}
     </tbody></table></div><small class="muted">Avant novembre 2026, les ventes viennent du fichier Excel ; un crédit marqué « Payé » y compte comme payé à temps.</small></section>
   </div></div>`;
 }
@@ -663,6 +681,8 @@ function homeDay(){
   </section>`:''}
   <div class="sec-title">Objectif par catégorie (caisses payées)</div>
   <section class="card"><div class="rows">${catBars(st.catV,cib,st.catA)}</div><small class="muted" style="display:block;margin-top:8px">Clients qui ont acheté une huile lente ce mois : <b>${new Set(S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee'&&o.lines.some(l=>P(l.pid).categorie==='lente')).map(o=>o.cid)).size}</b> · chaque nouveau client crée le marché.</small></section>
+  <div class="sec-title">Nouveaux clients Elite</div>
+  <section class="card stack">${newCliCard(ym)}</section>
   </div><div class="col-b">
   <div class="sec-title">Caisses vendues et points</div>
   <section class="card"><div class="rows">${prodRows||'<div class="empty">Aucune vente ce mois.</div>'}</div></section>
@@ -1004,9 +1024,9 @@ document.addEventListener('click',e=>{
       .then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{if(!ok)throw new Error(j.error||'Erreur');rememberPin(pin);S.token=j.token;S.sync.sessionErr=null;S.seenDec={};save();closeSheet();toast('Session ouverte');pullDecisions(true);renderView()})
       .catch(e=>{$('#rmsg').innerHTML='<span style="color:var(--bad)">'+esc(navigator.onLine?e.message:'Pas de connexion internet')+'</span>'});break}
     case 'savenew':{const name=$('#nname').value.trim();if(!name){toast('Le nom est obligatoire');return}
-      const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null};
+      const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null,app:1};
       const wantGps=$('#ngps')&&$('#ngps').checked;
-      S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');
+      S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');checkNew(c);
       if(wantGps)getPos().then(f=>{c.lat=f[0];c.lng=f[1];c.acc=f[3];c.gpsAt=new Date().toISOString();save();op('client.update',{id:c.id,lat:c.lat,lng:c.lng,acc:c.acc,gpsAt:c.gpsAt});toast('Position GPS enregistrée (±'+c.acc+' m)')}).catch(e=>toast(e.message));
       if(tab==='sell'){cart.cid=c.id}renderView();break}
     case 'savesync':S.sync.url=$('#surl').value.trim()||SERVER_URL;S.sync.key=$('#skey').value.trim()||SERVER_KEY;S.sync.err=null;S.sync.pulled=0;save();trySync();toast(navigator.onLine?'Envoi en cours':'Enregistré. Envoi au retour du réseau');settingsSheet();break;
@@ -1093,7 +1113,7 @@ function dirModel(){
     else if(op.type==='vente.creee'){if(p.date>=lim120)vol[p.cid]=(vol[p.cid]||0)+(p.lines||[]).reduce((s2,l)=>s2+(+l.qty||0),0);if(p.gps)visits.push({vendor:op.vendor,date:p.date,cid:p.cid,lat:p.gps[0],lng:p.gps[1],kind:'Vente',amt:oAmt(p)})}
     else if(op.type==='client.suivi'&&p.gps)visits.push({vendor:op.vendor,date:p.date,cid:p.cid,lat:p.gps[0],lng:p.gps[1],kind:p.type||'Suivi'});
   });
-  return {geo,meta,vol,visits,grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,mouv:d.mouvements||[],dettes:d.dettes_fournisseurs||[],objMarge:+remu.marge_min||125000};
+  return {geo,meta,vol,visits,grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,mouv:d.mouvements||[],dettes:d.dettes_fournisseurs||[],objMarge:+remu.marge_min||125000,nouv:d.nouveaux_clients||[],cibN:Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,o.nouveaux_clients!=null?+o.nouveaux_clients:10]))};
 }
 const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
 const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
@@ -1110,7 +1130,7 @@ function dirStats(M,ym){
     if(o.enteredAt&&days(o.date,o.enteredAt)>3)g.tard.push(o);
     o.lines.forEach(l=>{g.byP[l.pid]=(g.byP[l.pid]||0)+l.qty;const gr=M.grid[l.pid]||{},c=gr.categorie||'moyenne';if(st==='valide'){g.catV[c]=(g.catV[c]||0)+l.qty;const pv=+l.price||+gr.price||0;g.margeV+=l.qty*(pv-(M.cost[l.pid]??pv));if(c==='lente'){g.cashL+=l.qty*(M.cost[l.pid]??pv);g.clL.add(o.cid)}}else if(st==='attente')g.catA[c]=(g.catA[c]||0)+l.qty});
   });
-  Object.entries(M.newClients).forEach(([v,l])=>{get(v).newC=l.filter(c=>c.date.slice(0,7)===ym).length});
+  M.nouv.filter(x=>x.ym===ym).forEach(x=>{const g=get(x.vendor);if(x.paye)g.newC++;else g.newA=(g.newA||0)+1});
   const cib=M.cib[ym]||CIB0;
   Object.values(vend).forEach(g=>{
     const paid=M.orders.filter(o=>o.vend===g.v&&o.date.slice(0,7)===ym&&(o.paidAt||days(o.date,t)>DELAI));
@@ -1120,14 +1140,14 @@ function dirStats(M,ym){
     if(g.late.length&&Math.max(...g.late.map(o=>days(o.date,t)-DELAI))>=7)g.feu='r';
     else if(g.late.length&&g.feu==='g')g.feu='y';
   });
-  return {vend:Object.values(vend).sort((a,b)=>b.valide-a.valide),objM,perDay,cib};
+  return {vend:Object.values(vend).sort((a,b)=>b.valide-a.valide),objM,perDay,cib,cibN:M.cibN[ym]??10};
 }
 
 // Mois passés : historique Excel (jusqu'au 6 nov. 2026) + ventes saisies dans l'app, par agent et par mois
 // Agrégat mensuel par agent : historique Excel + ventes de l'app (points validés = confirmés par la caisse)
 const lastDays=(ym,n)=>{const [y,m]=ym.split('-').map(Number),dim=new Date(y,m,0).getDate();return d=>+d.slice(8,10)>dim-n};
 function monthAgg(M){
-  const agg={},key=(ym,v)=>{const k=ym+'|'+v;return agg[k]||(agg[k]={ym,v,cR:0,cM:0,cL:0,cases:0,pts:0,ptsL:0,vente:0,marge:0,hm:0,np:0,att:0,cashL:0,clL:new Set(),clLh:0,last5:0,fin:null,clA:new Set(),clAh:0,elig:0,okp:0,pctH:null,src:new Set()})};
+  const agg={},key=(ym,v)=>{const k=ym+'|'+v;return agg[k]||(agg[k]={ym,v,cR:0,cM:0,cL:0,cases:0,pts:0,ptsL:0,vente:0,marge:0,hm:0,np:0,att:0,cashL:0,clL:new Set(),clLh:0,last5:0,fin:null,clA:new Set(),clAh:0,elig:0,okp:0,pctH:null,src:new Set(),nN:0})};
   M.hist.forEach(h=>{const a=key(h.ym,h.vendor);a.cR+=+h.caisses_rapides||0;a.cM+=+h.caisses_moyennes||0;a.cL+=+h.caisses_lentes||0;a.cases+=+h.caisses||0;a.pts+=+h.points_valides||0;a.ptsL+=Math.min(+h.points_valides||0,(+h.caisses_lentes||0)*3);a.vente+=+h.ventes||0;a.marge+=+h.marge_validee||0;a.hm+=+h.marge_hors_motex||0;a.np+=+h.non_paye||0;a.cashL+=+h.cash_lentes||0;a.clLh+=+h.clients_lentes||0;if(h.pct_fin_mois!=null)a.fin=+h.pct_fin_mois;a.clAh+=+h.clients_actifs||0;if(h.pct_paye!=null)a.pctH=+h.pct_paye;a.src.add('Excel')});
   const t=today();
   M.orders.forEach(o=>{if(o.status==='annulee')return;const ym=o.date.slice(0,7),a=key(ym,o.vend);a.src.add('App');
@@ -1137,6 +1157,7 @@ function monthAgg(M){
       a['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=q;a.cases+=q;a.vente+=q*pv;
       if(st==='valide'){a.pts+=pt;a.marge+=m;if(l.pid!=='motext')a.hm+=m;if(l5)a.last5+=pt;if(c==='lente'){a.ptsL+=pt;a.cashL+=q*pa;a.clL.add(o.cid)}}
       else if(st==='attente'||st==='aconfirmer')a.att+=pt})});
+  M.nouv.forEach(x=>{if(x.paye)key(x.ym,x.vendor).nN++});
   Object.values(agg).forEach(a=>{a.nClL=a.clLh+a.clL.size;a.nClA=a.clAh+a.clA.size;a.pct14=a.elig?a.okp/a.elig*100:a.pctH;a.pctApprox=!a.elig&&a.pctH!=null;if(a.src.has('App')&&a.pts)a.fin=a.last5/a.pts*100*(a.src.has('Excel')?NaN:1);if(Number.isNaN(a.fin))a.fin=null});
   return agg;
 }
@@ -1152,8 +1173,8 @@ function dirMonths(M){
     const td='style="padding:6px 5px;text-align:center;white-space:nowrap"';
     return `<section class="card stack"><div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${MOIS[m-1][0].toUpperCase()+MOIS[m-1].slice(1)} ${y}${ym===cur?' <span class="chip c-info">en cours</span>':''}</b><span class="muted num" style="font-size:12.5px">${fq(tot.cases)} caisses · ${fmt(tot.marge)} HTG de marge</span></div>
     <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;min-width:980px;font-size:13px">
-    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Cash libéré (lentes)</th><th>Clients lentes</th><th>% pts 5 derniers jours</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
-    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${fmt(a.cashL)}</td><td ${td}>${a.nClL}${(()=>{const pv=agg[prevYm(ym)+'|'+a.v];if(!pv)return '';const d=a.nClL-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</td><td ${td}>${a.fin==null?'<span class="muted">-</span>':`<span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} %</span>`}</td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Cash libéré (lentes)</th><th>Clients lentes</th><th>Nouveaux clients</th><th>% pts 5 derniers jours</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
+    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${fmt(a.cashL)}</td><td ${td}>${a.nClL}${(()=>{const pv=agg[prevYm(ym)+'|'+a.v];if(!pv)return '';const d=a.nClL-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</td><td ${td}>${ym<'2026-11'?'<span class="muted">-</span>':`<span style="color:var(${a.nN>=(M.cibN[ym]??10)?'--ok':'--fg'})">${a.nN}</span><small class="muted"> / ${M.cibN[ym]??10}</small>`}</td><td ${td}>${a.fin==null?'<span class="muted">-</span>':`<span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} %</span>`}</td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
     </tbody></table></div>${rows.some(a=>a.np>0)?`<span class="muted" style="font-size:12px">Non payé : ${rows.filter(a=>a.np>0).map(a=>esc(a.v)+' '+fmt(a.np)+' HTG').join(' · ')}</span>`:''}</section>`}).join('');
 }
 // Vitesse de vente : moyenne des 2 derniers mois terminés (Excel + app) ; jours / lot = vitesse ; jours de stock = couverture
@@ -1265,13 +1286,14 @@ function dirCroissance(M,agg){
   <p class="muted" style="margin:0;font-size:12.5px">1. <b>Marge payée</b> : où l'agent arrive. 2. <b>% payé sous 14 jours</b> : si le résultat devient de l'argent (cible ${M.remu.pct_paye_min} %). 3. <b>Clients actifs</b> : clients avec au moins une commande payée dans le mois (cible +5). Avant décembre, le % payé vient du statut « Payé » de l'Excel (≈, sans date de paiement).</p>
   <div class="cards-grid">${vs.map(v=>{const a=agg[ym+'|'+v]||{marge:0,nClA:0,pct14:null},b=agg[pym+'|'+v];
     return `<section class="card stack"><b style="font-size:16px">${esc(v)}</b>
-      <div class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="kv" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
         ${cell('Marge payée',fmt(a.marge),arrow(a.marge,b&&b.marge,'HTG'),a.marge>=M.objMarge?'objectif atteint':'objectif '+fmt(M.objMarge))}
         ${cell('% payé sous 14 j',a.pct14==null?'-':(a.pctApprox?'≈ ':'')+Math.round(a.pct14)+' %',arrow(a.pct14,b&&b.pct14,'%'),'cible '+M.remu.pct_paye_min+' %')}
         ${cell('Clients actifs',a.nClA,arrow(a.nClA,b&&b.nClA,'n'),'cible +5 / mois')}
+        ${cell('Nouveaux clients Elite',a.nN||0,ym<'2026-12'?'<small class="muted">depuis novembre</small>':arrow(a.nN||0,b&&b.nN,'n'),'cible '+(M.cibN[ym]??10)+' / mois · jamais commandé chez Elite')}
       </div>
       <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;font-size:12.5px"><tr style="color:var(--muted)"><td></td>${months.map(x=>`<td style="text-align:right;padding:2px 4px">${MOIS[+x.slice(5)-1].slice(0,4)}.</td>`).join('')}</tr>
-        ${[['Marge','marge',x=>fmt(x)],['% payé','pct14',x=>x==null?'-':Math.round(x)+' %'],['Clients','nClA',x=>x]].map(([l,k,f])=>`<tr><td style="color:var(--muted);padding:2px 4px">${l}</td>${months.map(x=>{const r=agg[x+'|'+v];return `<td style="text-align:right;padding:2px 4px">${r?f(r[k]):'-'}</td>`}).join('')}</tr>`).join('')}
+        ${[['Marge','marge',x=>fmt(x)],['% payé','pct14',x=>x==null?'-':Math.round(x)+' %'],['Clients','nClA',x=>x],['Nouveaux','nN',x=>x||0]].map(([l,k,f])=>`<tr><td style="color:var(--muted);padding:2px 4px">${l}</td>${months.map(x=>{const r=agg[x+'|'+v];return `<td style="text-align:right;padding:2px 4px">${r?f(r[k]):'-'}</td>`}).join('')}</tr>`).join('')}
       </table></div></section>`}).join('')||'<div class="card empty">Aucune donnée pour ce mois.</div>'}</div>`;
 }
 // Contrôles : signaux qui peuvent faire croire à une croissance qui n'en est pas une
@@ -1338,7 +1360,7 @@ function dirRender(){
           <div><b class="num">${fq(g.cases)}</b><small>caisses</small></div>
           <div><b class="num">${fmt(g.margeV)}</b><small>HTG de marge payée (≥ ${fmt(M.objMarge)})</small></div>
           <div><b class="num">${g.encPct==null?'—':Math.round(g.encPct)+' %'}</b><small>payé sous 14 j (≥ 90 %)</small></div>
-          <div><b class="num">${g.newC}</b><small>nouveaux clients (+5)</small></div>
+          <div><b class="num" style="color:var(${g.newC>=S2.cibN?'--ok':'--fg'})">${g.newC} / ${S2.cibN}</b><small>nouveaux clients Elite (payés)${g.newA?' · +'+g.newA+' en attente':''}</small></div>
           <div><b class="num">${fmt(g.cashL)}</b><small>HTG de cash libéré par les lentes</small></div>
           <div><b class="num">${g.clL.size}${(()=>{const pv=PREV[prevYm(D.ym)+'|'+g.v];if(!pv)return '';const d=g.clL.size-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</b><small>clients lentes (+3 vs mois passé)</small></div>
           <div><b class="num" style="${g.tard.length?'color:var(--warn)':''}">${g.tard.length}</b><small>vente(s) saisie(s) &gt; 3 j après</small></div>
@@ -1385,6 +1407,7 @@ function dirRender(){
     window.__ROT=ROT;
     body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div>
     <b style="font-size:13px">Caisses par catégorie</b><div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['rapide','moyenne','lente'].map(c=>`<label class="f">${CAT[c][0]}<input id="gc_${c}" type="number" inputmode="numeric" value="${S2.cib[c]}"></label>`).join('')}</div>
+    <label class="f">Nouveaux clients Elite par agent (jamais commandé chez Elite)<input id="gnew" type="number" inputmode="numeric" min="0" value="${S2.cibN}"></label>
     <button class="btn sec" data-act="dsaveobj">Enregistrer l'objectif</button></section>
     <section class="card stack"><b>Rémunération</b>
     <div class="grid2" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${[['fixe','Fixe (HTG)'],['taux','HTG par point'],['taux_accel','HTG par point au-delà de l\'objectif'],['marge_min','Marge payée minimum (HTG)'],['pct_paye_min','% payé sous 14 j minimum'],['garantie','Garantie (HTG)']].map(([k,l])=>`<label class="f">${l}<input id="rm_${k}" inputmode="decimal" value="${M.remu[k]}"></label>`).join('')}<label class="f">Garantie jusqu'au mois<input id="rm_garantie_jusqu_a" type="month" value="${M.remu.garantie_jusqu_a}"></label></div>
@@ -1448,7 +1471,7 @@ document.addEventListener('click',async e=>{
     if(!ids.length){toast('Coche au moins une vente');return}
     t.disabled=true;
     try{const r=await dirCall({action:'confirmPayments',ids,decision:a==='dconfirm'?'confirme':'refuse'});toast((a==='dconfirm'?'Confirmé : ':'Refusé : ')+r.count+' vente(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
-  else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value,cible_rapide:+$('#gc_rapide').value,cible_moyenne:+$('#gc_moyenne').value,cible_lente:+$('#gc_lente').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value,cible_rapide:+$('#gc_rapide').value,cible_moyenne:+$('#gc_moyenne').value,cible_lente:+$('#gc_lente').value,nouveaux_clients:+$('#gnew').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dsavegrid'){
     const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r,prix_achat:M.cost[r.id]}));
     document.querySelectorAll('[data-gc]').forEach(i=>{const r=rows.find(x=>x.id===i.dataset.gc);if(r)r.categorie=i.value});
