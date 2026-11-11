@@ -340,6 +340,8 @@ function init(vendor,pf){
 function op(type,payload){S.outbox.push({id:uid(),vendor:S.vendor,type,payload,at:new Date().toISOString()});save();trySync()}
 const P=id=>S.products.find(p=>p.id===id)||{name:id,pts:0,price:0};
 // Disponible pour ce vendeur = stock dépôt - réserve Direction - commandes à livrer (serveur) - ses ventes pas encore envoyées
+function dispoLine(pid,q,a){const pc=a>0?Math.min(100,q/a*100):100,full=q>=a;
+  return `<div data-dl="${pid}" style="margin-top:4px;max-width:260px"><div style="font-size:12.5px;white-space:nowrap">Commandé <span class="num" style="font-weight:700;color:var(${full?'--warn':'--pts'})">${fq(q)}</span> sur <span class="num" style="font-weight:700">${fq(a)}</span> disponible${a>1?'s':''}${full&&q?' · maximum':''}</div><div class="mini-bar" style="margin-top:3px"><span style="width:${pc}%;background:var(${full?'--warn':'--brand'})"></span></div></div>`}
 function avail(pid){const p=P(pid);if(p.stock==null)return Infinity;const pend=(S.outbox||[]).filter(o=>o.type==='vente.creee').reduce((s2,o)=>s2+(o.payload.lines||[]).filter(l=>l.pid===pid).reduce((a,l)=>a+(+l.qty||0),0),0);
   return Math.max(0,(+p.stock||0)-(+p.reserve||0)-(+p.engage||0)-pend)}
 const C=id=>S.clients.find(c=>c.id===id);
@@ -727,18 +729,18 @@ function sellView(){
       :`<button class="btn sec full" data-act="pickclient">Choisir le client</button>`}
     ${k&&k.top.length?`<div class="hstack" style="font-size:12.5px"><span class="muted">Habituel :</span>${k.top.map(([pid])=>`<button class="chip c-info" style="border:0" data-act="addq" data-id="${pid}" data-d="1">+ ${esc(P(pid).name)}</button>`).join('')}</div>`:''}
   </section>
-  <section class="card"><div class="rows">${prods.map(p=>{const q=cart.q[p.id]||0;return `<div class="row prod ${q?'has':''}"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small><span class="pts">${fp(p.pts)} pts</span> · ${fmt(p.price)} HTG</small>${(()=>{const a=avail(p.id);if(a===Infinity)return '';return a<=0&&!q?'<div><span class="chip c-bad">Rupture : 0 disponible</span></div>':`<div style="font-size:12.5px;margin-top:2px"><b class="num" style="color:var(${q>=a?'--warn':'--fg'})">${fq(q)} / ${fq(a)}</b> <span class="muted">dispo</span></div>`})()}</div>
+  <section class="card"><div class="rows">${prods.map(p=>{const q=cart.q[p.id]||0;return `<div class="row prod ${q?'has':''}"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small><span class="pts">${fp(p.pts)} pts</span> · ${fmt(p.price)} HTG</small>${(()=>{const a=avail(p.id);if(a===Infinity)return '';return a<=0&&!q?'<div><span class="chip c-bad">Rupture : 0 disponible</span></div>':dispoLine(p.id,q,a)})()}</div>
     <div class="step"><button data-act="addq" data-id="${p.id}" data-d="-1" aria-label="Retirer une caisse">−</button><input inputmode="decimal" data-qin="${p.id}" value="${q||''}" placeholder="0" aria-label="Caisses ${esc(p.name)}"><button data-act="addq" data-id="${p.id}" data-d="1" aria-label="Ajouter une caisse" ${q>=avail(p.id)?'disabled style="opacity:.35"':''}>+</button></div></div>`}).join('')}</div></section>
   </div><div class="col-b">
   <section class="card stack">
     <b>Paiement</b>
-    <div class="choice">${[['cash','Cash'],['moncash','MonCash'],['credit','Crédit']].map(([v,l])=>`<button data-act="pay" data-v="${v}" class="${cart.pay===v?'on':''}">${l}</button>`).join('')}</div>
+    <div class="choice choice2">${[['cash','Cash'],['credit','Crédit']].map(([v,l])=>`<button data-act="pay" data-v="${v}" class="${cart.pay===v?'on':''}">${l}</button>`).join('')}</div>
     ${cart.pay==='credit'?`<p class="muted" style="margin:0;font-size:13px">Les ${fp(pts)} pts restent « en attente » et comptent seulement si le client paie avant le ${dShort(addDays(cart.date,DELAI))}.</p>`:''}
     <b>Livraison</b>
     <div class="choice choice2">${[['livree','Livrée maintenant'],['attente','Commande à livrer']].map(([v,l])=>`<button data-act="deliv" data-v="${v}" class="${cart.deliv===v?'on':''}">${l}</button>`).join('')}</div>
     <div class="grid2"><label class="f">Date<input type="date" id="cdate" value="${cart.date}"></label><label class="f">Note<input id="cnote" value="${esc(cart.note)}" placeholder="Optionnel"></label></div>
   </section>
-  <div class="total-bar"><div class="main"><b class="num">${fmt(amt)} HTG</b><div class="muted num" style="font-size:12.5px">${fq(cases)} caisses · <span class="pts">${fp(pts)} pts</span></div></div>
+  <div class="total-bar"><div class="main" id="carttot"><b class="num">${fmt(amt)} HTG</b><div class="muted num" style="font-size:12.5px">${fq(cases)} caisses · <span class="pts">${fp(pts)} pts</span></div></div>
   <button class="btn" data-act="savesale" ${!c||!cases?'disabled':''}>Enregistrer</button></div></div></div>`;
 }
 function pickClientSheet(){
@@ -956,11 +958,20 @@ document.addEventListener('input',e=>{
   if(e.target.id==='cq'){cQuery=e.target.value;const pos=e.target.selectionStart;renderView();const i=$('#cq');i.focus();i.setSelectionRange(pos,pos)}
   if(e.target.id==='pq'){$('#plist').innerHTML=pickList(e.target.value)}
   if(e.target.id==='cnote'&&cart)cart.note=e.target.value;
+  const qi=e.target.dataset&&e.target.dataset.qin;
+  if(qi&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));let n=isFinite(v)&&v>0?Math.round(v*2)/2:0;const a=avail(qi);
+    if(n>a){n=Math.floor(a*2)/2;e.target.value=n||'';toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(qi).name)}
+    cart.q[qi]=n;const dl=document.querySelector('[data-dl="'+qi+'"]');if(dl)dl.outerHTML=dispoLine(qi,n,a);
+    const ls=Object.entries(cart.q).filter(([,q])=>q>0),amt=ls.reduce((s2,[id,q])=>s2+q*P(id).price,0),pts=ls.reduce((s2,[id,q])=>s2+q*P(id).pts,0),cs=ls.reduce((s2,[,q])=>s2+q,0);
+    const tt=$('#carttot');if(tt)tt.innerHTML=`<b class="num">${fmt(amt)} HTG</b><div class="muted num" style="font-size:12.5px">${fq(cs)} caisses · <span class="pts">${fp(pts)} pts</span></div>`;
+    const sb=document.querySelector('[data-act="savesale"]');if(sb)sb.disabled=!cart.cid||!cs;}
   if(e.target.id==='cdate'&&cart)cart.date=e.target.value||today();
 });
 document.addEventListener('change',e=>{
   const q=e.target.dataset&&e.target.dataset.qin;
-  if(q&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));let n=isFinite(v)&&v>0?Math.round(v*2)/2:0;const a=avail(q);if(n>a){toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(q).name);n=Math.floor(a*2)/2}cart.q[q]=n;renderView()}
+  // pas de re-rendu ici : sinon le champ suivant perd le focus quand le vendeur passe d'une huile à l'autre
+  if(q&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));let n=isFinite(v)&&v>0?Math.round(v*2)/2:0;const a=avail(q);if(n>a){toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(q).name);n=Math.floor(a*2)/2}cart.q[q]=n;e.target.value=n||'';
+    const row=e.target.closest('.prod');if(row){row.classList.toggle('has',n>0);const plus=row.querySelector('[data-d="1"]');if(plus){plus.disabled=n>=a;plus.style.opacity=n>=a?'.35':''}}}
 });
 
 /* ---------- notifications locales ---------- */
