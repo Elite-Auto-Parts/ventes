@@ -429,7 +429,7 @@ async function pullConfig(force){
   try{
     const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
     const tmo=(pr)=>Promise.race([pr,new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),8000))]);
-    const [g,o,rm,pp]=await tmo(Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h}),fetch(base+'parametres_publics?select=tel_caisse,nom_caisse',{headers:h})]));
+    const [g,o,rm,pp]=await tmo(Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h}),fetch(base+'parametres_publics?select=tel_caisse,nom_caisse,visites_jour',{headers:h})]));
     if(!g.ok||!o.ok)return;
     const rows=await g.json(),objs=await o.json();
     if(Array.isArray(rows)&&rows.length){
@@ -619,9 +619,12 @@ function homeDay(){
   const t=today();
   const todayPts=S.orders.filter(o=>o.date===t&&o.status!=='annulee').reduce((s,o)=>s+orderPts(o),0);
   const perDay=Math.round(obj/26);
-  const visits=S.clients.reduce((s,c)=>s+(c.logs||[]).filter(l=>l.date===t&&l.type==='Visite').length,0)+new Set(S.orders.filter(o=>o.date===t).map(o=>o.cid)).size;
-  const planned=S.visitsPlanned[t]||0;
-  const late=S.orders.filter(o=>o.pay==='credit'&&!o.paidAt&&o.status!=='annulee'&&days(o.date,t)>DELAI);
+  // Visites = clients différents vus aujourd'hui (vente ou suivi), comptés tout seuls ; cible fixée par la Direction
+  const seen=new Set(S.orders.filter(o=>o.date===t&&o.src!=='hist').map(o=>o.cid));S.clients.forEach(c=>{if((c.logs||[]).some(l=>l.date===t))seen.add(c.id)});
+  const visits=seen.size,planned=S.params&&S.params.visites_jour!=null?+S.params.visites_jour:8;
+  // Encaissement : seulement les crédits faits dans l'app (les anciens crédits Excel restent visibles dans Commandes)
+  const late=S.orders.filter(o=>o.src!=='hist'&&o.pay==='credit'&&!o.paidAt&&o.status!=='annulee'&&days(o.date,t)>DELAI);
+  const oldLate=S.orders.filter(o=>o.src==='hist'&&o.pay==='credit'&&!o.paidAt&&days(o.date,t)>DELAI).length;
   const lateMax=late.reduce((m,o)=>Math.max(m,days(o.date,t)-DELAI),0);
   const f1=todayPts>=perDay?'g':todayPts>=perDay*0.7?'y':'r';
   const f2=!planned?null:visits/planned>=0.9?'g':visits/planned>=0.7?'y':'r';
@@ -653,9 +656,9 @@ function homeDay(){
     <div class="hstack" style="justify-content:space-between"><b>Couleur du jour : <span class="chip ${worst==='g'?'c-ok':worst==='y'?'c-warn':'c-bad'}">${feuName[worst]}</span></b><small class="muted">Objectif ≈ ${perDay} pts/jour</small></div>
     <div class="feux">
       <div class="feu"><small><span class="dot ${f1}"></span>Points du jour</small><b class="num">${fp(todayPts)}</b><small>vert ≥ ${perDay}</small></div>
-      <div class="feu"><small><span class="dot ${f2||'c-mute'}" style="${f2?'':'background:var(--line)'}"></span>Visites</small><b class="num">${visits} / ${planned||'–'}</b>
-        <span class="step" style="margin-top:4px"><button data-act="vplan" data-d="-1" aria-label="Moins de visites prévues" style="width:26px;height:26px;font-size:15px">−</button><button data-act="vplan" data-d="1" aria-label="Plus de visites prévues" style="width:26px;height:26px;font-size:15px">+</button></span></div>
-      <div class="feu"><small><span class="dot ${f3}"></span>Encaissement</small><b class="num">${late.length}</b><small>${late.length?'crédit(s) > 14 j':'tout est à jour'}</small></div>
+      <div class="feu"><small><span class="dot ${f2||'c-mute'}" style="${f2?'':'background:var(--line)'}"></span>Visites</small><b class="num">${visits} / ${planned||'–'}</b><small>clients vus (vente ou suivi)</small>
+        </div>
+      <div class="feu"><small><span class="dot ${f3}"></span>Encaissement</small><b class="num">${late.length}</b><small>${late.length?'crédit(s) en retard (> 14 j)':'tout est à jour'}</small>${oldLate?`<small class="muted" style="display:block;margin-top:2px">+ ${oldLate} ancien(s) crédit(s) Excel à relancer</small>`:''}</div>
     </div>
   </section>`:''}
   <div class="sec-title">Objectif par catégorie (caisses payées)</div>
@@ -1368,8 +1371,9 @@ function dirRender(){
     <label class="f">Nom<input id="vname" list="vlist" autocomplete="off"><datalist id="vlist">${vs.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
     <label class="f">PIN (4 à 8 chiffres)<input id="vpin" inputmode="numeric" autocomplete="off" maxlength="8"></label>
     <button class="btn" data-act="dsetpin">Enregistrer</button></section>
-    <section class="card stack"><b>Caisse à appeler pour les ventes sans internet</b><p class="muted" style="margin:0;font-size:12.5px">Quand un vendeur n'a pas internet, l'app lui demande d'activer internet ou d'appeler ce numéro pour confirmer le stock avant d'enregistrer.</p>
+    <section class="card stack"><b>Caisse à appeler et visites par jour</b><p class="muted" style="margin:0;font-size:12.5px">Quand un vendeur n'a pas internet, l'app lui demande d'activer internet ou d'appeler ce numéro pour confirmer le stock avant d'enregistrer.</p>
     <div class="grid2"><label class="f">Nom<input id="pc_nom" value="${esc((D.data&&D.data.parametres&&D.data.parametres.nom_caisse)||'Gesmane')}"></label><label class="f">Téléphone<input id="pc_tel" inputmode="tel" value="${esc((D.data&&D.data.parametres&&D.data.parametres.tel_caisse)||'')}" placeholder="3xxx xxxx"></label></div>
+    <label class="f">Visites par jour (cible du feu « Visites »)<input id="pc_vis" type="number" inputmode="numeric" min="0" max="50" value="${(D.data&&D.data.parametres&&D.data.parametres.visites_jour)??8}"></label>
     <button class="btn sec" data-act="dsetparams">Enregistrer</button></section>
     <section class="card stack"><b>Clé Direction</b><p class="muted" style="margin:0;font-size:13px">Choisis une clé facile à retenir pour toi, au moins 8 caractères (par exemple une petite phrase). L'ancienne clé ne marchera plus, sur tous les appareils. Donne la nouvelle clé seulement à Steve, Abenson et Gesmane.</p>
     <label class="f">Nouvelle clé<input id="nk1" type="password" autocomplete="new-password"></label>
@@ -1430,7 +1434,7 @@ document.addEventListener('click',async e=>{
   else if(a==='dsetdispo'||a==='dsetdispoall'){const pid=$('#dp_prod').value,r=(dirModel().grid[pid]||{}),n=a==='dsetdispoall'?Math.max(0,(+r.stock||0)-(+r.engage||0)):parseFloat(String($('#dp_n').value).replace(',','.'));
     if(!(n>=0)){toast('Écris le nombre de caisses disponibles');return}t.disabled=true;
     try{const res=await dirCall({action:'setDispo',produit:pid,dispo:n});toast('Disponible vendeurs : '+fq(Math.max(0,(+r.stock||0)-(+res.reserve||0)-(+r.engage||0)))+' caisse(s) · réserve '+fq(+res.reserve||0));dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
-  else if(a==='dsetparams'){try{await dirCall({action:'setParams',nom_caisse:$('#pc_nom').value,tel_caisse:$('#pc_tel').value});toast('Enregistré : les téléphones le recevront à leur prochaine connexion');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dsetparams'){try{await dirCall({action:'setParams',nom_caisse:$('#pc_nom').value,tel_caisse:$('#pc_tel').value,visites_jour:$('#pc_vis').value});toast('Enregistré : les téléphones le recevront à leur prochaine connexion');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dinventaire'){t.disabled=true;try{const r=await dirCall({action:'inventaire',produit:$('#iv_prod').value,compte:parseFloat(String($('#iv_n').value).replace(',','.')),note:$('#iv_note').value});toast('Comptage enregistré · écart '+(r.ecart>0?'+':'')+fq(+r.ecart)+' caisse(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsupplierpaid'){t.disabled=true;try{await dirCall({action:'supplierPaid',id:+t.dataset.id});toast('Dette fournisseur marquée payée');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dmf'){D.mf[t.dataset.f]=!D.mf[t.dataset.f];dirRender()}
