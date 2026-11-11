@@ -274,7 +274,7 @@ function init(vendor,pf){
     objectives:{'2026-11':440,'2026-12':440,'2027-01':440,'2027-02':440},defaultObjective:440,
     clients:(pf.clients||[]).map(c=>({...c,logs:[],next:null})),
     orders:(pf.orders||[]).map(o=>({...o,paidAt:o.pay==='cash'?o.date:o.paidAt})),
-    visitsPlanned:{},outbox:[],sync:{url:SERVER_URL,key:SERVER_KEY,last:null},seen:{}};
+    token:pf.token||null,seenDec:{},visitsPlanned:{},outbox:[],sync:{url:SERVER_URL,key:SERVER_KEY,last:null},seen:{}};
   save();
 }
 function op(type,payload){S.outbox.push({id:uid(),vendor:S.vendor,type,payload,at:new Date().toISOString()});save();trySync()}
@@ -288,6 +288,12 @@ const CAT={rapide:['Rapide','c-ok'],moyenne:['Moyenne','c-warn'],lente:['Lente',
 const catChip=c=>CAT[c]?`<span class="chip ${CAT[c][1]}" style="font-size:10.5px">${CAT[c][0]}</span>`:'';
 const CORDER={lente:0,moyenne:1,rapide:2};
 const CIB0={rapide:120,moyenne:90,lente:20};
+// Rémunération : fixe + points × taux ; au-delà de l'objectif, taux accéléré si conditions ; garantie pendant la transition
+const REMU0={fixe:15000,taux:11.5,taux_accel:17,marge_min:125000,pct_paye_min:90,garantie:20000,garantie_jusqu_a:'2026-12'};
+function salaire(R,ym,pts,obj,accelOk){R={...REMU0,...(R||{})};['fixe','taux','taux_accel','garantie','marge_min','pct_paye_min'].forEach(k=>R[k]=+R[k]);
+  const base=Math.min(pts,obj)*R.taux,sup=Math.max(0,pts-obj),extra=sup*(accelOk?R.taux_accel:R.taux),formule=R.fixe+base+extra,garanti=ym<=R.garantie_jusqu_a;
+  return {base,extra,sup,formule,garanti,total:garanti?Math.max(R.garantie,formule):formule,accel:accelOk&&sup>0,R}}
+const ymLabel=ym=>{const [y,m]=ym.split('-').map(Number);return MOIS[m-1]+' '+y};
 const CK={rapide:'R',moyenne:'M',lente:'L'};
 const catBars=(have,cib,extra)=>['rapide','moyenne','lente'].map(c=>{const q=have[c]||0,t=cib[c]||0,pc=t?Math.min(100,q/t*100):100;return `<div class="row"><div class="main"><b>${CAT[c][0]}</b>${extra&&extra[c]?`<small> · +${fq(extra[c])} en attente</small>`:''}<div class="mini-bar"><span class="${q>=t?'done':''}" style="width:${pc}%"></span></div></div><div class="end num"><b>${fq(q)}</b><small class="muted"> / ${t} caisses</small></div></div>`}).join('');
 function orderPts(o){return o.lines.reduce((s,l)=>s+l.qty*(l.pts??P(l.pid).pts),0)}
@@ -295,13 +301,13 @@ function orderAmt(o){return o.lines.reduce((s,l)=>s+l.qty*(l.price||P(l.pid).pri
 function orderCases(o){return o.lines.reduce((s,l)=>s+l.qty,0)}
 function ptsState(o){
   if(o.status==='annulee')return 'annulee';
-  if(o.paidAt) return days(o.date,o.paidAt)<=DELAI?'valide':'perdu';
+  if(o.paidAt){if(days(o.date,o.paidAt)>DELAI)return 'perdu';return (o.src==='hist'||o.confirmedAt)?'valide':'aconfirmer'}
   return days(o.date,today())<=DELAI?'attente':'perdu';
 }
 function monthStats(ym){
   const os=S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee');
-  const r={valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},orders:os.length,catV:{},catA:{}};
-  os.forEach(o=>{const st=ptsState(o),p=orderPts(o);r[st]+=p;r.cases+=orderCases(o);r.amt+=orderAmt(o);
+  const r={valide:0,attente:0,aconf:0,perdu:0,cases:0,amt:0,byP:{},orders:os.length,catV:{},catA:{}};
+  os.forEach(o=>{const st0=ptsState(o),st=st0==='aconfirmer'?'attente':st0,p=orderPts(o);r[st]+=p;if(st0==='aconfirmer')r.aconf+=p;r.cases+=orderCases(o);r.amt+=orderAmt(o);
     o.lines.forEach(l=>{const c=P(l.pid).categorie||'moyenne';if(st==='valide')r.catV[c]=(r.catV[c]||0)+l.qty;else if(st==='attente')r.catA[c]=(r.catA[c]||0)+l.qty;const b=r.byP[l.pid]||(r.byP[l.pid]={q:0,pts:0});b.q+=l.qty;b.pts+=l.qty*(l.pts??P(l.pid).pts)})});
   return r;
 }
@@ -339,6 +345,7 @@ function alerts(){
     if(k.last&&!k.freq&&k.since>=30&&contacted>7){A.push({kind:'relance',lvl:'warn',cid:c.id,title:c.name,text:'Une seule commande, '+ago(k.since)+'. À relancer pour une 2e commande',sort:4});return}
     if(c.status==='prospect'&&contacted>7){A.push({kind:'relance',lvl:'info',cid:c.id,title:c.name,text:'Prospect'+(c.note?' · '+c.note:'')+(k.lastLog?' · dernier contact '+ago(contacted):' · jamais contacté dans l\'app'),sort:6})}
   });
+  S.orders.filter(o=>o.refusedAt&&!o.paidAt&&o.status!=='annulee').forEach(o=>A.push({kind:'credit',lvl:'bad',oid:o.id,cid:o.cid,title:(C(o.cid)||{}).name||'Client',text:'Paiement refusé par la caisse le '+dShort(o.refusedAt)+' · '+fmt(orderAmt(o))+' HTG à régler',sort:0.1}));
   S.orders.filter(o=>o.status==='attente').forEach(o=>A.push({kind:'commande',lvl:'warn',oid:o.id,cid:o.cid,title:(C(o.cid)||{}).name||'Client',text:'Commande en attente de livraison · '+fq(orderCases(o))+' caisses · '+dShort(o.date),sort:0.5}));
   S.orders.filter(o=>o.pay==='credit'&&!o.paidAt&&o.status!=='annulee').forEach(o=>{
     const d=days(o.date,t),left=DELAI-d;
@@ -356,7 +363,7 @@ async function pullConfig(force){
   if(!force&&S.sync.pulled&&Date.now()-S.sync.pulled<5*60e3)return;
   try{
     const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
-    const [g,o]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h})]);
+    const [g,o,rm]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h})]);
     if(!g.ok||!o.ok)return;
     const rows=await g.json(),objs=await o.json();
     if(Array.isArray(rows)&&rows.length){
@@ -365,11 +372,32 @@ async function pullConfig(force){
       S.products.forEach(p=>{if(!act.has(p.id))p.active=false});
     }
     if(Array.isArray(objs))objs.forEach(x=>{S.objectives[x.ym]=+x.points;(S.cibles=S.cibles||{})[x.ym]={rapide:+x.cible_rapide||0,moyenne:+x.cible_moyenne||0,lente:+x.cible_lente||0}});
+    try{if(rm&&rm.ok){const x=await rm.json();if(x&&x[0])S.remu=x[0]}}catch(e){}
     S.sync.pulled=Date.now();save();if(document.getElementById('view'))renderView();
   }catch(e){}
 }
+// Confirmations / refus de paiement faits par la caisse (Gesmane)
+let pullingDec=false;
+async function pullDecisions(force){
+  if(!S||!S.token||pullingDec||!navigator.onLine)return;
+  if(!force&&S.sync.decAt&&Date.now()-S.sync.decAt<90e3)return;
+  pullingDec=true;
+  try{
+    const r=await fetch(SERVER_URL+'/functions/v1/vendeur-sync',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({token:S.token})});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===401){S.sync.sessionErr=j.error||'Session expirée';save();renderTop();pullingDec=false;return}
+    if(r.ok&&Array.isArray(j.decisions)){
+      S.seenDec=S.seenDec||{};let nC=0,nR=0;
+      j.decisions.forEach(d=>{const k=d.id+'|'+d.statut+'|'+d.at;if(S.seenDec[k])return;S.seenDec[k]=1;const o=S.orders.find(x=>x.id===d.id);if(!o)return;
+        if(d.statut==='confirme'){o.confirmedAt=d.at;o.refusedAt=null;nC++}else{o.paidAt=null;o.confirmedAt=null;o.refusedAt=d.at;nR++}});
+      S.sync.decAt=Date.now();S.sync.sessionErr=null;save();
+      if(nC||nR){if(document.getElementById('view'))renderView();toast([nC?nC+' paiement(s) confirmé(s) par la caisse':'',nR?nR+' refusé(s)':''].filter(Boolean).join(' · '))}
+    }
+  }catch(e){}
+  pullingDec=false;
+}
 async function trySync(){
-  pullConfig(false);
+  pullConfig(false);pullDecisions(false);
   if(syncing||!navigator.onLine||!S||!S.sync.url||!S.sync.key||!S.outbox.length)return;
   syncing=true;
   try{
@@ -477,13 +505,14 @@ function homeView(){
     <div class="month-nav"><span class="lbl">Points ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="mprev" aria-label="Mois précédent">‹</button><button data-act="mnext" aria-label="Mois suivant" ${isCur?'disabled':''}>›</button></span></div>
     <div class="big num">${fp(st.valide)} <small>/ ${fmt(obj)} pts</small></div>
     <div class="bar" aria-label="Progression objectif"><em style="width:${pctAll}%"></em><span style="width:${pct}%"></span></div>
-    <div class="hstack" style="justify-content:space-between;margin-top:6px;font-size:12.5px;opacity:.9"><span>${st.valide>=obj?'Objectif atteint · prime confirmée par la Direction':'Encore '+fp(obj-st.valide)+' pts pour la prime'}</span><span>${isCur?'Jour '+dayN+' / '+daysInM:'Mois terminé'}</span></div>
+    <div class="hstack" style="justify-content:space-between;margin-top:6px;font-size:12.5px;opacity:.9"><span>${st.valide>=obj?'Objectif atteint':'Encore '+fp(obj-st.valide)+' pts pour l\'objectif'}</span><span>${isCur?'Jour '+dayN+' / '+daysInM:'Mois terminé'}</span></div>
     <div class="hero-grid">
-      <div><b class="num">${fp(st.attente)}</b><small>pts en attente de paiement</small></div>
+      <div><b class="num">${fp(st.attente)}</b><small>pts en attente${st.aconf?' (dont '+fp(st.aconf)+' à confirmer par la caisse)':''}</small></div>
       <div><b class="num">${fq(st.cases)}</b><small>caisses vendues</small></div>
       <div><b class="num">${fp(st.perdu)}</b><small>pts perdus (payé après 14 j)</small></div>
     </div>
   </section>
+  ${salaryCard(st,obj)}
   ${isCur?`<div class="sec-title">Feu du jour</div>
   <section class="card stack">
     <div class="hstack" style="justify-content:space-between"><b>Couleur du jour : <span class="chip ${worst==='g'?'c-ok':worst==='y'?'c-warn':'c-bad'}">${feuName[worst]}</span></b><small class="muted">Objectif ≈ ${perDay} pts/jour</small></div>
@@ -501,6 +530,23 @@ function homeView(){
   <section class="card"><div class="rows">${prodRows||'<div class="empty">Aucune vente ce mois.</div>'}</div></section>
   <div class="sec-title">Grille des points du mois</div>
   <section class="card"><div class="rows">${S.products.filter(p=>p.active!==false).sort((a,b)=>(CORDER[a.categorie]??1)-(CORDER[b.categorie]??1)||b.pts-a.pts).map(p=>`<div class="row"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small>${fmt(p.price)} HTG la caisse</small></div><div class="end pts num">${fp(p.pts)} pts</div></div>`).join('')}</div></section></div></div>`;
+}
+
+function salaryCard(st,obj){
+  const sal=salaire(S.remu,ym,st.valide,obj,false),R=sal.R,isCur=ym===today().slice(0,7);
+  const ifConf=st.aconf?salaire(S.remu,ym,st.valide+st.aconf,obj,false).total:0;
+  const notice=!S.token||S.sync.sessionErr?`<div class="hstack" style="justify-content:space-between;background:var(--warn-soft);border-radius:10px;padding:8px 10px"><small style="color:var(--warn)">Entre ton PIN une fois pour recevoir les paiements confirmés par la caisse.</small><button class="btn sm" data-act="askrelogin">Entrer mon PIN</button></div>`:'';
+  return `<div class="sec-title">Salaire ${isCur?'estimé':''} · ${ymLabel(ym)}</div>
+  <section class="card stack">${notice}
+    <div class="hstack" style="justify-content:space-between;align-items:baseline"><b class="num" style="font-family:var(--f-display);font-size:24px">${fmt(sal.total)} HTG</b>${sal.garanti&&sal.total>sal.formule?'<span class="chip c-info">Garantie '+fmt(R.garantie)+' HTG</span>':''}</div>
+    <div class="rows">
+      <div class="row"><div class="main">Fixe</div><div class="end num">${fmt(R.fixe)}</div></div>
+      <div class="row"><div class="main">${fp(Math.min(st.valide,obj))} pts × ${String(R.taux).replace('.',',')} HTG</div><div class="end num">${fmt(sal.base)}</div></div>
+      ${sal.sup?`<div class="row"><div class="main">${fp(sal.sup)} pts au-delà de ${obj} <small>· ${String(R.taux_accel).replace('.',',')} HTG si la Direction confirme les conditions</small></div><div class="end num">${fmt(sal.extra)}+</div></div>`:`<div class="row"><div class="main muted">Au-delà de ${obj} pts : jusqu'à ${String(R.taux_accel).replace('.',',')} HTG par point</div><div class="end"></div></div>`}
+    </div>
+    ${ifConf?`<small class="muted">Si la caisse confirme tes paiements en attente : ${fmt(ifConf)} HTG.</small>`:''}
+    ${sal.garanti?`<small class="muted">Transition : tu touches au moins ${fmt(R.garantie)} HTG jusqu'en ${ymLabel(R.garantie_jusqu_a)}, ou plus si la formule donne plus.</small>`:''}
+  </section>`;
 }
 
 /* ---------- Clients ---------- */
@@ -594,7 +640,7 @@ function pickList(q){q=q.toLowerCase();return S.clients.filter(c=>!q||(c.name+' 
 /* ---------- Commandes ---------- */
 function orderRow(o,actions=true){
   const st=ptsState(o),c=C(o.cid);
-  const chip={valide:'<span class="chip c-ok">Points validés</span>',attente:'<span class="chip c-warn">Pts en attente</span>',perdu:'<span class="chip c-bad">Pts perdus</span>',annulee:'<span class="chip c-mute">Annulée</span>'}[st];
+  const chip={valide:'<span class="chip c-ok">Points validés</span>',aconfirmer:'<span class="chip c-info">Paiement à confirmer par la caisse</span>',attente:o.refusedAt?'<span class="chip c-bad">Paiement refusé par la caisse</span>':'<span class="chip c-warn">Pts en attente</span>',perdu:'<span class="chip c-bad">Pts perdus</span>',annulee:'<span class="chip c-mute">Annulée</span>'}[st];
   const left=DELAI-days(o.date,today());
   const pay={cash:'Cash',moncash:'MonCash',credit:'Crédit'}[o.pay];
   let act='';
@@ -659,6 +705,13 @@ function csvText(){
 /* ---------- sheet ---------- */
 function openSheet(html){closeSheet();const d=document.createElement('div');d.className='scrim';d.id='scrim';d.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;document.body.appendChild(d)}
 function closeSheet(){const s=$('#scrim');s&&s.remove()}
+function reloginSheet(){
+  openSheet(`<div class="sheet-head"><h2>Recevoir les confirmations</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="card stack"><p class="muted" style="margin:0;font-size:13px">Entre ton PIN une fois. Tes ventes et tes clients restent sur ce téléphone ; l'app pourra recevoir les paiements confirmés par la caisse.</p>
+  <label class="f">PIN de ${esc(S.vendor)}<input id="rpin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+  <button class="btn" data-act="relogin">Valider</button><div id="rmsg"></div></div>`);
+  setTimeout(()=>{const i=$('#rpin');i&&i.focus()},50);
+}
 function newClientSheet(){
   openSheet(`<div class="sheet-head"><h2>Nouveau client</h2><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="card stack"><label class="f">Nom de l'auto-parts<input id="nname"></label><label class="f">Téléphone<input id="nphone" inputmode="tel" placeholder="3xxx xxxx / 4xxx xxxx"></label>
@@ -700,15 +753,20 @@ document.addEventListener('click',e=>{
       lines.forEach(l=>{const p=P(l.pid);if(o.status==='livree')p.stock=Math.max(0,p.stock-l.qty)});
       op('vente.creee',o);
       const pts=orderPts(o);cart=null;
-      toast(o.pay==='credit'?`Vente enregistrée · ${fp(pts)} pts en attente de paiement`:`Vente enregistrée · +${fp(pts)} pts`);
+      toast(o.pay==='credit'?`Vente enregistrée · ${fp(pts)} pts en attente de paiement`:`Vente enregistrée · ${fp(pts)} pts dès que la caisse confirme`);
       tab=o.status==='attente'?'orders':'home';if(tab==='orders')oFilter='attente';renderView();scrollTo(0,0);break}
     case 'deliver':{const o=S.orders.find(x=>x.id===id);o.status='livree';o.deliveredAt=today();o.lines.forEach(l=>{const p=P(l.pid);p.stock=Math.max(0,p.stock-l.qty)});op('vente.livree',{id,at:o.deliveredAt});toast('Commande marquée livrée');renderView();break}
-    case 'paid':{const o=S.orders.find(x=>x.id===id);o.paidAt=today();op('vente.payee',{id,at:o.paidAt});const st=ptsState(o);toast(st==='valide'?`Payé · +${fp(orderPts(o))} pts validés`:'Payé · après 14 jours, pas de points');renderView();break}
+    case 'paid':{const o=S.orders.find(x=>x.id===id);o.paidAt=today();op('vente.payee',{id,at:o.paidAt});const st=ptsState(o);toast(st==='aconfirmer'?`Paiement envoyé à la caisse · ${fp(orderPts(o))} pts après confirmation`:st==='valide'?`Payé · +${fp(orderPts(o))} pts validés`:'Payé · après 14 jours, pas de points');renderView();break}
     case 'ltype':document.querySelectorAll('#ltype button').forEach(b=>b.classList.toggle('on',b===t));break;
     case 'addlog':{const c=C(id);const type=(document.querySelector('#ltype .on')||{}).dataset?.t||'Visite';
       const l={date:today(),type,note:$('#lnote').value.trim()};c.logs=c.logs||[];c.logs.push(l);c.next=$('#lnext').value||null;
       op('client.suivi',{cid:id,...l,next:c.next});toast('Suivi enregistré');clientSheet(id);if(tab!=='sell')renderView();break}
     case 'newclient':newClientSheet();break;
+    case 'askrelogin':reloginSheet();break;
+    case 'relogin':{const pin=($('#rpin').value||'').trim();if(!pin)return;$('#rmsg').innerHTML='<span class="muted">Vérification…</span>';
+      fetch(SERVER_URL+'/functions/v1/portefeuille',{method:'POST',headers:{'Content-Type':'application/json','apikey':SERVER_KEY},body:JSON.stringify({vendor:S.vendor,pin})})
+      .then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{if(!ok)throw new Error(j.error||'Erreur');S.token=j.token;S.sync.sessionErr=null;S.seenDec={};save();closeSheet();toast('Session ouverte');pullDecisions(true);renderView()})
+      .catch(e=>{$('#rmsg').innerHTML='<span style="color:var(--bad)">'+esc(navigator.onLine?e.message:'Pas de connexion internet')+'</span>'});break}
     case 'savenew':{const name=$('#nname').value.trim();if(!name){toast('Le nom est obligatoire');return}
       const c={id:'c_'+uid(),name,phone:$('#nphone').value.trim(),zone:$('#nzone').value.trim(),vend:S.vendor,note:'',status:$('#nstat').value,logs:[],next:null};
       S.clients.push(c);op('client.cree',c);closeSheet();toast('Client ajouté');
@@ -771,22 +829,25 @@ function dirModel(){
   (d.ops||[]).forEach(op=>{const p=op.payload||{};
     if(op.type==='vente.creee')orders[p.id]={...p,vend:op.vendor};
     else if(op.type==='vente.payee'&&orders[p.id])orders[p.id].paidAt=p.at;
+    else if(op.type==='paiement.confirme'&&orders[p.id]){orders[p.id].confirmedAt=p.at;orders[p.id].refusedAt=null}
+    else if(op.type==='paiement.refuse'&&orders[p.id]){const o=orders[p.id];o.paidAt=null;o.confirmedAt=null;o.refusedAt=p.at}
     else if(op.type==='vente.livree'&&orders[p.id]){orders[p.id].status='livree';orders[p.id].deliveredAt=p.at}
     else if(op.type==='client.cree'){names[p.id]=p.name;(newClients[op.vendor]=newClients[op.vendor]||[]).push({id:p.id,date:op.created_at.slice(0,10)})}
     if(op.type==='vente.creee'&&p.cname)names[p.cid]=p.cname;
   });
   const cost=Object.fromEntries((d.couts||[]).map(c=>[c.id,+c.prix_achat]));
   const cib=Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,{rapide:+o.cible_rapide||0,moyenne:+o.cible_moyenne||0,lente:+o.cible_lente||0}]));
-  return {grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],objMarge:d.objectif_marge||125000,prime:d.prime_par_point||15};
+  const remu={...REMU0,...(d.remuneration||{})};
+  return {grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,objMarge:+remu.marge_min||125000};
 }
 const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
 const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
-function oState(o,t){if(o.paidAt)return days(o.date,o.paidAt)<=DELAI?'valide':'perdu';return days(o.date,t)<=DELAI?'attente':'perdu'}
+function oState(o,t){if(o.paidAt){if(days(o.date,o.paidAt)>DELAI)return 'perdu';return o.confirmedAt?'valide':'aconfirmer'}return days(o.date,t)<=DELAI?'attente':'perdu'}
 function dirStats(M,ym){
   const t=today(),objM=M.obj[ym]||440,perDay=Math.round(objM/26),vend={};
   const get=v=>vend[v]||(vend[v]={v,valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},today:0,late:[],lateAmt:0,newC:0,orders:0,clients:new Set(),catV:{},catA:{},margeV:0});
   M.orders.forEach(o=>{
-    const st=oState(o,t);
+    const st0=oState(o,t),st=st0==='aconfirmer'?'attente':st0;
     if(o.pay==='credit'&&!o.paidAt&&days(o.date,t)>DELAI){const g=get(o.vend);g.late.push(o);g.lateAmt+=oAmt(o)}
     if(o.date.slice(0,7)!==ym)return;
     const g=get(o.vend);g[st]+=oPts(o);g.cases+=o.lines.reduce((s,l)=>s+l.qty,0);g.amt+=oAmt(o);g.orders++;g.clients.add(o.cid);
@@ -796,9 +857,9 @@ function dirStats(M,ym){
   Object.entries(M.newClients).forEach(([v,l])=>{get(v).newC=l.filter(c=>c.date.slice(0,7)===ym).length});
   const cib=M.cib[ym]||CIB0;
   Object.values(vend).forEach(g=>{
-    g.primeOk=g.valide>=objM&&g.margeV>=M.objMarge;g.prime=g.primeOk?g.valide*M.prime:0;
     const paid=M.orders.filter(o=>o.vend===g.v&&o.date.slice(0,7)===ym&&(o.paidAt||days(o.date,t)>DELAI));
-    g.encPct=paid.length?paid.filter(o=>o.paidAt&&days(o.date,o.paidAt)<=DELAI).length/paid.length*100:null;
+    g.encPct=paid.length?paid.filter(o=>o.paidAt&&o.confirmedAt&&days(o.date,o.paidAt)<=DELAI).length/paid.length*100:null;
+    g.accelOk=g.valide>=objM&&g.margeV>=+M.remu.marge_min&&(g.encPct??0)>=+M.remu.pct_paye_min;g.sal=salaire(M.remu,ym,g.valide,objM,g.accelOk);
     g.feu=g.today>=perDay?'g':g.today>=perDay*0.7?'y':'r';
     if(g.late.length&&Math.max(...g.late.map(o=>days(o.date,t)-DELAI))>=7)g.feu='r';
     else if(g.late.length&&g.feu==='g')g.feu='y';
@@ -815,19 +876,32 @@ function dirMonths(M){
     if(!o.paidAt)a.np+=oAmt(o);const st=oState(o,t);
     o.lines.forEach(l=>{const g=M.grid[l.pid]||{},c=g.categorie||'moyenne',q=+l.qty||0,pv=+l.price||+g.price||0,pa=M.cost[l.pid]??pv,m=q*(pv-pa),pt=q*(l.pts??(+g.pts||0));
       a['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=q;a.cases+=q;a.vente+=q*pv;
-      if(st==='valide'){a.pts+=pt;a.marge+=m;if(l.pid!=='motext')a.hm+=m}else if(st==='attente')a.att+=pt})});
+      if(st==='valide'){a.pts+=pt;a.marge+=m;if(l.pid!=='motext')a.hm+=m}else if(st==='attente'||st==='aconfirmer')a.att+=pt})});
   const months=[...new Set(Object.values(agg).map(a=>a.ym))].sort().reverse();
   if(!months.length)return '<div class="card empty">Aucun mois à afficher.</div>';
   const cur=t.slice(0,7);
-  return `<p class="muted" style="margin:0;font-size:12.5px">Points validés et marge sur les ventes payées seulement (grille actuelle). Prime = points × ${M.prime} HTG si l'objectif de points et ${fmt(M.objMarge)} HTG de marge sont atteints. Jusqu'au 6 novembre 2026 : Liste Commande (Excel). Ensuite : ventes saisies dans l'app. Marge = prix de vente - prix d'achat. Visible par la Direction seulement.</p>`+months.map(ym=>{
+  return `<p class="muted" style="margin:0;font-size:12.5px">Points validés et marge sur les ventes payées seulement (grille actuelle). Salaire = formule actuelle (fixe ${fmt(M.remu.fixe)} + points × ${String(M.remu.taux).replace('.',',')} HTG, ${String(M.remu.taux_accel).replace('.',',')} HTG au-delà de l'objectif si ${fmt(M.objMarge)} HTG de marge) ; avant décembre 2026, c'est une simulation. Jusqu'au 6 novembre 2026 : Liste Commande (Excel). Ensuite : ventes saisies dans l'app. Marge = prix de vente - prix d'achat. Visible par la Direction seulement.</p>`+months.map(ym=>{
     const rows=Object.values(agg).filter(a=>a.ym===ym).sort((a,b)=>b.pts-a.pts),obj=M.obj[ym]||440,cb=M.cib[ym]||CIB0,[y,m]=ym.split('-').map(Number);
     const tot=rows.reduce((s,a)=>({pts:s.pts+a.pts,marge:s.marge+a.marge,vente:s.vente+a.vente,cases:s.cases+a.cases}),{pts:0,marge:0,vente:0,cases:0});
     const td='style="padding:6px 5px;text-align:center;white-space:nowrap"';
     return `<section class="card stack"><div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${MOIS[m-1][0].toUpperCase()+MOIS[m-1].slice(1)} ${y}${ym===cur?' <span class="chip c-info">en cours</span>':''}</b><span class="muted num" style="font-size:12.5px">${fq(tot.cases)} caisses · ${fmt(tot.marge)} HTG de marge</span></div>
     <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;min-width:640px;font-size:13px">
-    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Prime</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
-    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=ok&&a.pts>=obj?a.pts*M.prime:0,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}>${pr?`<b>${fmt(pr)}</b>`:'<span class="muted">0</span>'}</td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
+    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
     </tbody></table></div>${rows.some(a=>a.np>0)?`<span class="muted" style="font-size:12px">Non payé : ${rows.filter(a=>a.np>0).map(a=>esc(a.v)+' '+fmt(a.np)+' HTG').join(' · ')}</span>`:''}</section>`}).join('');
+}
+// Encaissements : la caisse (Gesmane) confirme ou refuse les paiements déclarés par les vendeurs
+function dirCaisse(M){
+  const t=today(),list=M.orders.filter(o=>o.paidAt&&!o.confirmedAt).sort((a,b)=>a.paidAt<b.paidAt?-1:1);
+  if(!list.length)return '<div class="card empty">Aucun paiement à confirmer. Les ventes cash, MonCash et les crédits encaissés apparaissent ici dès que les vendeurs les déclarent.</div>';
+  const by={};list.forEach(o=>(by[o.vend]=by[o.vend]||[]).push(o));
+  const pay={cash:'Cash',moncash:'MonCash',credit:'Crédit'};
+  return `<p class="muted" style="margin:0;font-size:12.5px">Coche les ventes dont l'argent est bien arrivé (dépôt, MonCash, reçu), puis confirme. Les points du vendeur sont validés seulement après ta confirmation. Un refus remet la vente « non payée » chez le vendeur.</p>`+Object.entries(by).map(([v,os])=>`<section class="card stack">
+    <div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${esc(v)}</b><span class="num"><b>${fmt(os.reduce((s,o)=>s+oAmt(o),0))} HTG</b> <small class="muted">· ${os.length} vente(s)</small></span></div>
+    <label class="hstack" style="font-size:13px"><input type="checkbox" data-allv="${esc(v)}"> Tout cocher</label>
+    <div class="rows">${os.map(o=>{const late=days(o.date,o.paidAt)>DELAI;return `<label class="row" style="cursor:pointer"><input type="checkbox" data-pay="${esc(o.id)}" data-v="${esc(v)}" style="width:20px;height:20px"><div class="main"><b>${esc(M.names[o.cid]||o.cname||o.cid)}</b><small>${pay[o.pay]} · vendu le ${dShort(o.date)} · payé le ${dShort(o.paidAt)}${late?' · <span style="color:var(--bad)">payé après 14 j : pas de points</span>':''}</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div class="pts" style="font-size:12.5px">${fp(oPts(o))} pts</div></div></label>`}).join('')}</div>
+    <div class="hstack"><button class="btn okb" data-act="dconfirm" data-v="${esc(v)}">Confirmer la sélection</button><button class="btn ghost" data-act="drefuse" data-v="${esc(v)}">Refuser</button></div>
+  </section>`).join('');
 }
 function dirShell(){
   return `<header class="top"><div class="top-row">${LOGO}<div class="who"><b>Espace Direction</b><small>Elite Auto Parts · tous les vendeurs</small></div>
@@ -841,7 +915,8 @@ function dirRender(){
   const M=dirModel(),S2=dirStats(M,D.ym),[y,m]=D.ym.split('-').map(Number);
   const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
   const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
-  const tabs=[['equipe','Équipe'],['mois','Mois passés'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  const nConf=M.orders.filter(o=>o.paidAt&&!o.confirmedAt).length;
+  const tabs=[['equipe','Équipe'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['mois','Mois passés'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
   let body='';
   if(D.tab==='equipe'){
     body=`<section class="card hero"><div class="month-nav"><span class="lbl">Équipe · ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="dmprev" aria-label="Mois précédent">‹</button><button data-act="dmnext" aria-label="Mois suivant">›</button></span></div>
@@ -860,11 +935,15 @@ function dirRender(){
         </div>
         ${g.late.length?`<span style="color:var(--bad);font-size:13px">${g.late.length} crédit(s) en retard · ${fmt(g.lateAmt)} HTG</span>`:''}
         <div class="rows">${catBars(g.catV,S2.cib,g.catA)}</div>
-        <div class="hstack" style="justify-content:space-between">${g.primeOk?`<span class="chip c-ok">Prime : ${fmt(g.prime)} HTG</span>`:`<span class="chip c-mute">Pas encore de prime</span><small class="muted">${[g.valide<S2.objM?'manque '+fp(S2.objM-g.valide)+' pts':'',g.margeV<M.objMarge?'manque '+fmt(M.objMarge-g.margeV)+' HTG de marge':''].filter(Boolean).join(' · ')}</small>`}</div>
+        <div class="stack" style="gap:4px;background:var(--bg);border-radius:10px;padding:10px"><div class="hstack" style="justify-content:space-between"><b>Salaire : ${fmt(g.sal.total)} HTG</b>${g.sal.garanti&&g.sal.total>g.sal.formule?'<span class="chip c-info">garantie</span>':''}${g.sal.accel?'<span class="chip c-ok">accélérateur</span>':''}</div>
+          <small class="muted">Fixe ${fmt(g.sal.R.fixe)} + ${fp(Math.min(g.valide,S2.objM))} pts × ${String(g.sal.R.taux).replace('.',',')} = ${fmt(g.sal.base)}${g.sal.sup?` + ${fp(g.sal.sup)} pts × ${g.accelOk?String(g.sal.R.taux_accel).replace('.',','):String(g.sal.R.taux).replace('.',',')} = ${fmt(g.sal.extra)}`:''} · formule ${fmt(g.sal.formule)} HTG</small>
+          ${g.valide>=S2.objM&&!g.accelOk?`<small style="color:var(--warn)">Accélérateur bloqué : ${[g.margeV<+M.remu.marge_min?'marge '+fmt(g.margeV)+' < '+fmt(M.remu.marge_min):'',(g.encPct??0)<+M.remu.pct_paye_min?'payé sous 14 j '+Math.round(g.encPct??0)+' % < '+M.remu.pct_paye_min+' %':''].filter(Boolean).join(' · ')}</small>`:''}</div>
       </section>`}).join('')+'</div>':`<div class="card empty">Aucune vente saisie dans l'app pour ce mois. Les ventes apparaissent ici dès que les téléphones des vendeurs se synchronisent.</div>`}`;
   } else if(D.tab==='credits'){
     const t=today(),all=M.orders.filter(o=>o.pay==='credit'&&!o.paidAt).sort((a,b)=>a.date<b.date?-1:1);
     body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
+  } else if(D.tab==='caisse'){
+    body=dirCaisse(M);
   } else if(D.tab==='mois'){
     body=dirMonths(M);
   } else if(D.tab==='vendeurs'){
@@ -882,7 +961,11 @@ function dirRender(){
     const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort).map(r=>({...r,pts:+r.pts,prix_achat:M.cost[r.id]??''}));
     body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div>
     <b style="font-size:13px">Caisses par catégorie</b><div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['rapide','moyenne','lente'].map(c=>`<label class="f">${CAT[c][0]}<input id="gc_${c}" type="number" inputmode="numeric" value="${S2.cib[c]}"></label>`).join('')}</div>
-    <p class="muted" style="margin:0;font-size:12.5px">Prime : ${M.prime} HTG par point, versée si l'agent atteint les points <b>et</b> ${fmt(M.objMarge)} HTG de marge sur ses ventes payées.</p><button class="btn sec" data-act="dsaveobj">Enregistrer l'objectif</button></section>
+    <button class="btn sec" data-act="dsaveobj">Enregistrer l'objectif</button></section>
+    <section class="card stack"><b>Rémunération</b>
+    <div class="grid2" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${[['fixe','Fixe (HTG)'],['taux','HTG par point'],['taux_accel','HTG par point au-delà de l\'objectif'],['marge_min','Marge payée minimum (HTG)'],['pct_paye_min','% payé sous 14 j minimum'],['garantie','Garantie (HTG)']].map(([k,l])=>`<label class="f">${l}<input id="rm_${k}" inputmode="decimal" value="${M.remu[k]}"></label>`).join('')}<label class="f">Garantie jusqu'au mois<input id="rm_garantie_jusqu_a" type="month" value="${M.remu.garantie_jusqu_a}"></label></div>
+    <p class="muted" style="margin:0;font-size:12.5px">Salaire = fixe + points validés × taux. Au-delà de l'objectif, le taux accéléré s'applique si la marge payée et le % payé sous 14 jours sont atteints. Jusqu'au mois de garantie, l'agent touche au moins la garantie.</p>
+    <button class="btn sec" data-act="dsaveremu">Enregistrer la rémunération</button></section>
     <section class="card stack"><b>Grille du mois</b><p class="muted" style="margin:0;font-size:13px">Les téléphones reçoivent la nouvelle grille à la prochaine connexion. Les ventes déjà saisies gardent leurs points. Le prix d'achat reste visible seulement ici, jamais par les vendeurs.</p>
     <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:600px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Catégorie</th><th>Pts</th><th>Prix achat</th><th>Prix HTG</th><th>Stock dépôt</th></tr></thead><tbody>
     ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td><td><select data-gc="${esc(r.id)}" aria-label="Catégorie ${esc(r.name)}" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)">${['rapide','moyenne','lente'].map(c=>`<option value="${c}" ${r.categorie===c?'selected':''}>${CAT[c][0]}</option>`).join('')}</select></td>${['pts','prix_achat','price','stock'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
@@ -893,6 +976,7 @@ function dirRender(){
    ${D.err?`<div class="card" style="color:var(--bad)">${esc(D.err)}</div>`:''}${body}
    <button class="btn ghost" data-act="dlogout">Fermer la session Direction</button>`;
 }
+document.addEventListener('change',e=>{const v=e.target.dataset&&e.target.dataset.allv;if(v)document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]').forEach(i=>i.checked=e.target.checked)});
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act;
   if(a==='godir'){closeSheet();route='dir';render();if(D.key)dirLoad();}
@@ -909,6 +993,13 @@ document.addEventListener('click',async e=>{
     if(k1!==k2){msg.innerHTML='<span style="color:var(--bad)">Les deux clés ne sont pas pareilles.</span>';return}
     try{await dirCall({action:'changeKey',newKey:k1});D.key=k1;dirSave();$('#nk1').value='';$('#nk2').value='';msg.innerHTML='<span style="color:var(--ok)">Clé changée. Elle est gardée sur cet appareil.</span>';toast('Clé Direction changée')}catch(err){msg.innerHTML='<span style="color:var(--bad)">'+esc(err.message)+'</span>'}
   }
+  else if(a==='dsaveremu'){const remu={};['fixe','taux','taux_accel','marge_min','pct_paye_min','garantie'].forEach(k=>remu[k]=parseFloat(String($('#rm_'+k).value).replace(',','.')));remu.garantie_jusqu_a=$('#rm_garantie_jusqu_a').value;
+    try{await dirCall({action:'setRemuneration',remu});toast('Rémunération enregistrée');dirLoad()}catch(err){toast(err.message)}}
+  else if(a==='dconfirm'||a==='drefuse'){
+    const v=t.dataset.v,ids=[...document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]')].filter(i=>i.checked).map(i=>i.dataset.pay);
+    if(!ids.length){toast('Coche au moins une vente');return}
+    t.disabled=true;
+    try{const r=await dirCall({action:'confirmPayments',ids,decision:a==='dconfirm'?'confirme':'refuse'});toast((a==='dconfirm'?'Confirmé : ':'Refusé : ')+r.count+' vente(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsaveobj'){try{await dirCall({action:'setObjective',ym:$('#gym').value,points:+$('#gobj').value,cible_rapide:+$('#gc_rapide').value,cible_moyenne:+$('#gc_moyenne').value,cible_lente:+$('#gc_lente').value});toast('Objectif publié');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dsavegrid'){
     const M=dirModel(),rows=Object.values(M.grid).map(r=>({...r,prix_achat:M.cost[r.id]}));
@@ -922,7 +1013,7 @@ document.addEventListener('click',async e=>{
 S=load();
 if(S&&!S.sync.url){S.sync.url=SERVER_URL;S.sync.key=SERVER_KEY;save()}
 render();
-if(S){pullConfig(true);trySync();setTimeout(()=>notifySummary(false),1500)}
+if(S){pullConfig(true);pullDecisions(true);trySync();setTimeout(()=>notifySummary(false),1500)}
 try{if('serviceWorker' in navigator&&location.protocol.startsWith('http')&&window.__PWA__)navigator.serviceWorker.register('sw.js')}catch(e){}
 </script>
 
