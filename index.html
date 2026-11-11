@@ -839,7 +839,7 @@ function dirModel(){
   const cib=Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,{rapide:+o.cible_rapide||0,moyenne:+o.cible_moyenne||0,lente:+o.cible_lente||0}]));
   const remu={...REMU0,...(d.remuneration||{})};
   const vp={};(d.ventes_produit||[]).forEach(r=>{vp[r.ym+'|'+r.produit]=(vp[r.ym+'|'+r.produit]||0)+(+r.caisses||0)});
-  return {grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,objMarge:+remu.marge_min||125000};
+  return {grid,obj,cib,orders:Object.values(orders),names,newClients,qbo:d.qbo,cost,hist:d.historique||[],remu,vp,mouv:d.mouvements||[],dettes:d.dettes_fournisseurs||[],objMarge:+remu.marge_min||125000};
 }
 const oPts=o=>o.lines.reduce((s,l)=>s+l.qty*(l.pts||0),0);
 const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
@@ -901,6 +901,56 @@ function dirMonths(M){
     <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Cash libéré (lentes)</th><th>Clients lentes</th><th>% pts 5 derniers jours</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
     ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${fmt(a.cashL)}</td><td ${td}>${a.nClL}${(()=>{const pv=agg[prevYm(ym)+'|'+a.v];if(!pv)return '';const d=a.nClL-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</td><td ${td}>${a.fin==null?'<span class="muted">-</span>':`<span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} %</span>`}</td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
     </tbody></table></div>${rows.some(a=>a.np>0)?`<span class="muted" style="font-size:12px">Non payé : ${rows.filter(a=>a.np>0).map(a=>esc(a.v)+' '+fmt(a.np)+' HTG').join(' · ')}</span>`:''}</section>`}).join('');
+}
+// Vitesse de vente : moyenne des 2 derniers mois terminés (Excel + app) ; jours / lot = vitesse ; jours de stock = couverture
+function rotation(M,rows){
+  const cur=today().slice(0,7),m1=prevYm(cur),m2=prevYm(m1),appV={};
+  M.orders.forEach(o=>{if(o.status==='annulee')return;const ym=o.date.slice(0,7);if(ym!==m1&&ym!==m2)return;o.lines.forEach(l=>{appV[ym+'|'+l.pid]=(appV[ym+'|'+l.pid]||0)+(+l.qty||0)})});
+  const ROT={};rows.forEach(r=>{const v=[m1,m2].map(ym=>(M.vp[ym+'|'+r.id]||0)+(appV[ym+'|'+r.id]||0));const vm=(v[0]+v[1])/2,st=+r.stock||0,lot=+r.lot||50,jours=vm>0?st/(vm/30):(st>0?Infinity:null),jl=vm>0?lot/(vm/30):Infinity;
+    ROT[r.id]={vm,jours,jl,sug:(st<=0&&vm<1)?'rupture':jl<=30?'rapide':jl<=90?'moyenne':'lente'}});
+  return ROT;
+}
+// Stock : achats reçus (Gesmane), inventaires, dettes fournisseurs. Les ventes livrées sortent du stock automatiquement.
+function dirStock(M){
+  const t=today(),rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort),ROT=rotation(M,rows);
+  const val=rows.reduce((s,r)=>s+Math.max(0,+r.stock||0)*(M.cost[r.id]||0),0);
+  const dettes=M.dettes,detteTot=dettes.reduce((s,d)=>s+(+d.quantite||0)*(+d.prix_achat||0),0),echu=dettes.filter(d=>d.echeance&&d.echeance<t);
+  const status=r=>{const st=+r.stock||0,R=ROT[r.id]||{};if(st<=0)return '<span class="chip c-bad">Rupture</span>';if(R.jours!=null&&R.jours<15)return '<span class="chip c-warn">À commander</span>';if(R.jours>90)return '<span class="chip c-mute">Dormant</span>';return '<span class="chip c-ok">OK</span>'};
+  const fourn=[...new Set(M.mouv.map(m=>m.fournisseur).filter(Boolean))];
+  const opt=rows.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+  const TYP={achat:['Achat','c-ok'],vente:['Vente','c-info'],inventaire:['Inventaire','c-warn'],ajustement:['Ajustement','c-warn'],retour:['Retour','c-mute']};
+  const inp='style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font-size:15px;width:100%"';
+  return `<section class="card hero"><span class="lbl">Stock dépôt</span>
+    <div class="hero-grid"><div><b class="num">${fmt(val)}</b><small>HTG de stock (prix d'achat)</small></div><div><b class="num">${rows.filter(r=>(+r.stock||0)<=0).length}</b><small>huile(s) en rupture</small></div><div><b class="num">${fmt(detteTot)}</b><small>HTG dus aux fournisseurs${echu.length?' · '+echu.length+' échu(s)':''}</small></div></div></section>
+  <div class="layout2"><div class="col-a">
+  <section class="card stack"><b>Recevoir un achat</b><p class="muted" style="margin:0;font-size:12.5px">À remplir quand un lot arrive au dépôt. Le stock augmente tout de suite et les téléphones des vendeurs le voient à la prochaine connexion.</p>
+    <div class="grid2"><label class="f">Date de réception<input id="pa_date" type="date" value="${t}"></label><label class="f">Huile<select id="pa_prod" ${inp}>${opt}<option value="__new">+ Nouvelle huile…</option></select></label></div>
+    <div id="pa_new" class="stack" hidden style="background:var(--bg);border-radius:10px;padding:10px">
+      <b style="font-size:13px">Nouvelle huile</b>
+      <div class="grid2"><label class="f">Nom<input id="np_name"></label><label class="f">Catégorie<select id="np_cat" ${inp}><option value="rapide">Rapide</option><option value="moyenne">Moyenne</option><option value="lente" selected>Lente</option></select></label></div>
+      <div class="grid2"><label class="f">Points par caisse<input id="np_pts" inputmode="decimal" value="2"></label><label class="f">Prix de vente (HTG)<input id="np_price" inputmode="decimal"></label></div>
+    </div>
+    <div class="grid2"><label class="f">Caisses reçues<input id="pa_qte" inputmode="decimal" placeholder="Ex. 50"></label><label class="f">Prix d'achat par caisse (HTG)<input id="pa_prix" inputmode="decimal" value="${M.cost[rows[0]&&rows[0].id]||''}"></label></div>
+    <label class="f">Fournisseur<input id="pa_four" list="pa_flist" autocomplete="off"><datalist id="pa_flist">${fourn.map(f=>`<option value="${esc(f)}">`).join('')}</datalist></label>
+    <div class="choice choice2" id="pa_pay"><button data-act="papay" data-v="cash" class="on">Payé cash</button><button data-act="papay" data-v="credit">Crédit fournisseur</button></div>
+    <label class="f" id="pa_ech_w" hidden>Date d'échéance (à payer au fournisseur)<input id="pa_ech" type="date"></label>
+    <label class="hstack" style="font-size:13.5px"><input id="pa_maj" type="checkbox" checked> Utiliser ce prix comme nouveau prix d'achat (calcul de la marge)</label>
+    <label class="f">Note<input id="pa_note" placeholder="Ex. facture n°, lot d'octobre"></label>
+    <button class="btn" data-act="dpurchase">Enregistrer l'achat</button>
+  </section>
+  <section class="card stack"><b>Inventaire (comptage)</b><p class="muted" style="margin:0;font-size:12.5px">Compte les caisses au dépôt et entre le chiffre. L'écart avec le stock de l'app est gardé dans les mouvements.</p>
+    <div class="grid2"><label class="f">Huile<select id="iv_prod" ${inp}>${opt}</select></label><label class="f">Caisses comptées<input id="iv_n" inputmode="decimal"></label></div>
+    <label class="f">Note<input id="iv_note" placeholder="Ex. 2 caisses défectueuses"></label>
+    <button class="btn sec" data-act="dinventaire">Enregistrer le comptage</button>
+  </section>
+  ${dettes.length?`<section class="card stack"><b>Dettes fournisseurs</b><div class="rows">${dettes.map(d=>{const late=d.echeance&&d.echeance<t;return `<div class="row"><div class="main"><b>${esc(d.fournisseur||'Fournisseur')} · ${esc((M.grid[d.produit]||{}).name||d.produit)}</b><small>${fq(+d.quantite)} caisses reçues le ${dShort(d.date)} · échéance ${d.echeance?`<span style="color:var(${late?'--bad':'--fg'})">${dShort(d.echeance)}${late?' (dépassée)':''}</span>`:'-'}</small></div><div class="end num"><b>${fmt((+d.quantite||0)*(+d.prix_achat||0))}</b><div><button class="btn sm okb" data-act="dsupplierpaid" data-id="${d.id}">Payé</button></div></div></div>`}).join('')}</div></section>`:''}
+  </div><div class="col-b">
+  <section class="card"><b>Stock par huile</b><div style="overflow-x:auto;margin-top:8px"><table class="num" style="border-collapse:collapse;width:100%;min-width:520px;font-size:13.5px">
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px">Huile</th><th>Stock</th><th>Ventes / mois</th><th>Jours de stock</th><th>Valeur</th><th>État</th></tr></thead><tbody>
+    ${rows.map(r=>{const R=ROT[r.id]||{};return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px;font-weight:600">${esc(r.name)} ${catChip(r.categorie)}</td><td style="text-align:center"><b>${fq(+r.stock||0)}</b></td><td style="text-align:center">${R.vm==null?'-':fq(Math.round(R.vm*10)/10)}</td><td style="text-align:center">${R.jours==null||(+r.stock||0)<=0?'-':R.jours>365?'> 365':Math.round(R.jours)}</td><td style="text-align:right">${fmt(Math.max(0,+r.stock||0)*(M.cost[r.id]||0))}</td><td style="text-align:center">${status(r)}</td></tr>`}).join('')}
+    </tbody></table></div><p class="muted" style="margin:8px 0 0;font-size:12px">À commander : moins de 15 jours de stock. Dormant : plus de 90 jours de stock.</p></section>
+  <section class="card"><b>Derniers mouvements</b><div class="rows" style="margin-top:6px">${M.mouv.slice(0,40).map(m=>{const T=TYP[m.type]||[m.type,'c-mute'];return `<div class="row"><div class="main"><b>${esc((M.grid[m.produit]||{}).name||m.produit)}</b><small>${dShort(m.date)} · ${m.type==='vente'?esc(m.vendeur||''):esc(m.fournisseur||m.note||'')}${m.prix_achat?' · '+fmt(+m.prix_achat)+' HTG/caisse':''}</small></div><div class="end"><span class="chip ${T[1]}">${T[0]}</span><div class="num" style="font-weight:600;color:var(${+m.quantite<0?'--bad':'--ok'})">${+m.quantite>0?'+':''}${fq(+m.quantite)}</div></div></div>`}).join('')||'<div class="empty">Aucun mouvement pour le moment.</div>'}</div></section>
+  </div></div>`;
 }
 // Croissance : les 3 métriques clés par agent, comparées au mois précédent
 function dirCroissance(M,agg){
@@ -971,7 +1021,7 @@ function dirRender(){
   const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
   const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
   const nConf=M.orders.filter(o=>o.paidAt&&!o.confirmedAt).length;
-  const tabs=[['equipe','Équipe'],['croissance','Croissance'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['mois','Mois passés'],['controles','Contrôles'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  const tabs=[['equipe','Équipe'],['croissance','Croissance'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['stock','Stock'],['mois','Mois passés'],['controles','Contrôles'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
   let body='';
   const PREV=monthAgg(M);
   if(D.tab==='equipe'){
@@ -1003,6 +1053,8 @@ function dirRender(){
     body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
   } else if(D.tab==='caisse'){
     body=dirCaisse(M);
+  } else if(D.tab==='stock'){
+    body=dirStock(M);
   } else if(D.tab==='croissance'){
     body=dirCroissance(M,PREV);
   } else if(D.tab==='controles'){
@@ -1022,11 +1074,7 @@ function dirRender(){
     <button class="btn" data-act="dchangekey">Changer la clé</button><div id="nkmsg"></div></section>`;
   } else {
     const rows=Object.values(M.grid).sort((a,b)=>a.sort-b.sort).map(r=>({...r,pts:+r.pts,prix_achat:M.cost[r.id]??''}));
-    // Vitesse de vente : moyenne des 2 derniers mois terminés (Excel + app), jours de stock = stock ÷ ventes par jour
-    const cur=today().slice(0,7),m1=prevYm(cur),m2=prevYm(m1),appV={};
-    M.orders.forEach(o=>{if(o.status==='annulee')return;const ym=o.date.slice(0,7);if(ym!==m1&&ym!==m2)return;o.lines.forEach(l=>{appV[ym+'|'+l.pid]=(appV[ym+'|'+l.pid]||0)+(+l.qty||0)})});
-    const ROT={};rows.forEach(r=>{const v=[m1,m2].map(ym=>(M.vp[ym+'|'+r.id]||0)+(appV[ym+'|'+r.id]||0));const vm=(v[0]+v[1])/2,st=+r.stock||0,lot=+r.lot||50,jours=vm>0?st/(vm/30):(st>0?Infinity:null),jl=vm>0?lot/(vm/30):Infinity;
-      ROT[r.id]={vm,jours,jl,sug:(st<=0&&vm<1)?'rupture':jl<=30?'rapide':jl<=90?'moyenne':'lente'}});
+    const ROT=rotation(M,rows);
     window.__ROT=ROT;
     body=`<section class="card stack"><b>Objectif par agent</b><div class="grid2"><label class="f">Mois<input id="gym" type="month" value="${D.ym}"></label><label class="f">Points<input id="gobj" type="number" inputmode="numeric" value="${S2.objM}"></label></div>
     <b style="font-size:13px">Caisses par catégorie</b><div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${['rapide','moyenne','lente'].map(c=>`<label class="f">${CAT[c][0]}<input id="gc_${c}" type="number" inputmode="numeric" value="${S2.cib[c]}"></label>`).join('')}</div>
@@ -1036,8 +1084,8 @@ function dirRender(){
     <p class="muted" style="margin:0;font-size:12.5px">Salaire = fixe + points validés × taux. Au-delà de l'objectif, le taux accéléré s'applique si la marge payée et le % payé sous 14 jours sont atteints. Jusqu'au mois de garantie, l'agent touche au moins la garantie.</p>
     <button class="btn sec" data-act="dsaveremu">Enregistrer la rémunération</button></section>
     <section class="card stack"><b>Grille du mois</b><p class="muted" style="margin:0;font-size:13px">Les téléphones reçoivent la nouvelle grille à la prochaine connexion. Les ventes déjà saisies gardent leurs points. Le prix d'achat reste visible seulement ici, jamais par les vendeurs.</p>
-    <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1040px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Catégorie</th><th>Ventes / mois</th><th>Jours / lot</th><th>Jours de stock</th><th>Suggestion</th><th>Pts</th><th>Prix achat</th><th>Prix HTG</th><th>Stock dépôt</th><th>Lot habituel</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td><td><select data-gc="${esc(r.id)}" aria-label="Catégorie ${esc(r.name)}" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)">${['rapide','moyenne','lente'].map(c=>`<option value="${c}" ${r.categorie===c?'selected':''}>${CAT[c][0]}</option>`).join('')}</select></td>${(()=>{const r2=ROT[r.id]||{};return `<td style="text-align:center">${r2.vm==null?'-':fq(Math.round(r2.vm*10)/10)}</td><td style="text-align:center"><b>${r2.jl==null?'-':r2.jl>365?'> 365':Math.round(r2.jl)}</b></td><td style="text-align:center">${(+r.stock||0)<=0?'<span class="chip c-bad">rupture</span>':r2.jours==null?'-':r2.jours>365?'> 365':Math.round(r2.jours)}</td><td style="text-align:center">${r2.sug?(r2.sug==='rupture'?'<span class="chip c-mute">rupture</span>':`<span class="chip ${r2.sug===r.categorie?'c-mute':CAT[r2.sug][1]}" title="${r2.sug===r.categorie?'Catégorie actuelle confirmée':'Changement suggéré'}">${CAT[r2.sug][0]}${r2.sug===r.categorie?'':' ←'}</span>`):'-'}</td>`})()}${['pts','prix_achat','price','stock','lot'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
+    <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1040px;font-size:14px"><thead><tr style="text-align:left;color:var(--muted);font-size:12px"><th style="padding:6px 4px">Huile</th><th>Catégorie</th><th>Ventes / mois</th><th>Jours / lot</th><th>Jours de stock</th><th>Suggestion</th><th>Stock dépôt</th><th>Pts</th><th>Prix achat</th><th>Prix HTG</th><th>Lot habituel</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px">${esc(r.name)}</td><td><select data-gc="${esc(r.id)}" aria-label="Catégorie ${esc(r.name)}" style="padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)">${['rapide','moyenne','lente'].map(c=>`<option value="${c}" ${r.categorie===c?'selected':''}>${CAT[c][0]}</option>`).join('')}</select></td>${(()=>{const r2=ROT[r.id]||{};return `<td style="text-align:center">${r2.vm==null?'-':fq(Math.round(r2.vm*10)/10)}</td><td style="text-align:center"><b>${r2.jl==null?'-':r2.jl>365?'> 365':Math.round(r2.jl)}</b></td><td style="text-align:center">${(+r.stock||0)<=0?'<span class="chip c-bad">rupture</span>':r2.jours==null?'-':r2.jours>365?'> 365':Math.round(r2.jours)}</td><td style="text-align:center">${r2.sug?(r2.sug==='rupture'?'<span class="chip c-mute">rupture</span>':`<span class="chip ${r2.sug===r.categorie?'c-mute':CAT[r2.sug][1]}" title="${r2.sug===r.categorie?'Catégorie actuelle confirmée':'Changement suggéré'}">${CAT[r2.sug][0]}${r2.sug===r.categorie?'':' ←'}</span>`):'-'}</td>`})()}<td style="text-align:center" title="Le stock se modifie dans l'onglet Stock">${fq(+r.stock||0)}</td>${['pts','prix_achat','price','lot'].map(k=>`<td><input data-g="${esc(r.id)}" data-k="${k}" value="${r[k]}" inputmode="decimal" aria-label="${k} ${esc(r.name)}" style="width:76px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface)"></td>`).join('')}</tr>`).join('')}
     </tbody></table></div>
     <p class="muted" style="margin:0;font-size:12.5px">Ventes / mois : moyenne de ${ymLabel(prevYm(prevYm(today().slice(0,7))))} et ${ymLabel(prevYm(today().slice(0,7)))}. Jours / lot = lot habituel ÷ ventes par jour : c'est la vitesse de l'huile, et la base de la suggestion (30 jours ou moins = rapide, 31 à 90 = moyenne, plus de 90 = lente). Jours de stock = stock dépôt ÷ ventes par jour. Le lot habituel vient de la feuille Stock ; modifie-le si tes achats changent.</p>
     <div class="hstack"><button class="btn sec" data-act="dapplysug">Appliquer les suggestions</button><button class="btn" data-act="dsavegrid">Publier la grille</button></div></section>`;
@@ -1047,7 +1095,7 @@ function dirRender(){
    ${D.err?`<div class="card" style="color:var(--bad)">${esc(D.err)}</div>`:''}${body}
    <button class="btn ghost" data-act="dlogout">Fermer la session Direction</button>`;
 }
-document.addEventListener('change',e=>{const v=e.target.dataset&&e.target.dataset.allv;if(v)document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]').forEach(i=>i.checked=e.target.checked)});
+document.addEventListener('change',e=>{if(e.target.id==='pa_prod'){const M=dirModel(),v2=e.target.value;$('#pa_new').hidden=v2!=='__new';if(v2!=='__new')$('#pa_prix').value=M.cost[v2]||'';return}const v=e.target.dataset&&e.target.dataset.allv;if(v)document.querySelectorAll('[data-pay][data-v="'+CSS.escape(v)+'"]').forEach(i=>i.checked=e.target.checked)});
 document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act;
   if(a==='godir'){closeSheet();route='dir';render();if(D.key)dirLoad();}
@@ -1065,6 +1113,18 @@ document.addEventListener('click',async e=>{
     try{await dirCall({action:'changeKey',newKey:k1});D.key=k1;dirSave();$('#nk1').value='';$('#nk2').value='';msg.innerHTML='<span style="color:var(--ok)">Clé changée. Elle est gardée sur cet appareil.</span>';toast('Clé Direction changée')}catch(err){msg.innerHTML='<span style="color:var(--bad)">'+esc(err.message)+'</span>'}
   }
   else if(a==='dapplysug'){const R=window.__ROT||{};let n=0;document.querySelectorAll('[data-gc]').forEach(sel=>{const s2=(R[sel.dataset.gc]||{}).sug;if(s2&&s2!=='rupture'&&sel.value!==s2){sel.value=s2;n++}});toast(n?n+' catégorie(s) changée(s) : vérifie les points puis publie':'Aucun changement suggéré')}
+  else if(a==='papay'){document.querySelectorAll('#pa_pay button').forEach(b=>b.classList.toggle('on',b===t));$('#pa_ech_w').hidden=t.dataset.v!=='credit'}
+  else if(a==='dpurchase'){
+    let prod=$('#pa_prod').value;const pay=(document.querySelector('#pa_pay .on')||{}).dataset?.v||'cash';
+    const num=id=>parseFloat(String($(id).value).replace(',','.'));
+    t.disabled=true;
+    try{
+      if(prod==='__new'){const r=await dirCall({action:'addProduct',produit:{name:$('#np_name').value,categorie:$('#np_cat').value,pts:num('#np_pts'),price:num('#np_price'),prix_achat:num('#pa_prix'),lot:num('#pa_qte')}});prod=r.id}
+      await dirCall({action:'addPurchase',achat:{produit:prod,date:$('#pa_date').value,quantite:num('#pa_qte'),prix_achat:num('#pa_prix'),fournisseur:$('#pa_four').value,paiement:pay,echeance:$('#pa_ech').value,maj_prix:$('#pa_maj').checked,note:$('#pa_note').value}});
+      toast('Achat enregistré : stock mis à jour');dirLoad();
+    }catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dinventaire'){t.disabled=true;try{const r=await dirCall({action:'inventaire',produit:$('#iv_prod').value,compte:parseFloat(String($('#iv_n').value).replace(',','.')),note:$('#iv_note').value});toast('Comptage enregistré · écart '+(r.ecart>0?'+':'')+fq(+r.ecart)+' caisse(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dsupplierpaid'){t.disabled=true;try{await dirCall({action:'supplierPaid',id:+t.dataset.id});toast('Dette fournisseur marquée payée');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsaveremu'){const remu={};['fixe','taux','taux_accel','marge_min','pct_paye_min','garantie'].forEach(k=>remu[k]=parseFloat(String($('#rm_'+k).value).replace(',','.')));remu.garantie_jusqu_a=$('#rm_garantie_jusqu_a').value;
     try{await dirCall({action:'setRemuneration',remu});toast('Rémunération enregistrée');dirLoad()}catch(err){toast(err.message)}}
   else if(a==='dconfirm'||a==='drefuse'){
