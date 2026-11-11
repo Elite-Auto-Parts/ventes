@@ -339,6 +339,9 @@ function init(vendor,pf){
 }
 function op(type,payload){S.outbox.push({id:uid(),vendor:S.vendor,type,payload,at:new Date().toISOString()});save();trySync()}
 const P=id=>S.products.find(p=>p.id===id)||{name:id,pts:0,price:0};
+// Disponible pour ce vendeur = stock dépôt - réserve Direction - commandes à livrer (serveur) - ses ventes pas encore envoyées
+function avail(pid){const p=P(pid);if(p.stock==null)return Infinity;const pend=(S.outbox||[]).filter(o=>o.type==='vente.creee').reduce((s2,o)=>s2+(o.payload.lines||[]).filter(l=>l.pid===pid).reduce((a,l)=>a+(+l.qty||0),0),0);
+  return Math.max(0,(+p.stock||0)-(+p.reserve||0)-(+p.engage||0)-pend)}
 const C=id=>S.clients.find(c=>c.id===id);
 
 /* ---------- règles de points ---------- */
@@ -423,12 +426,12 @@ async function pullConfig(force){
   if(!force&&S.sync.pulled&&Date.now()-S.sync.pulled<5*60e3)return;
   try{
     const base=S.sync.url.replace(/\/$/,'')+'/rest/v1/',h=srvHeaders(S.sync.key);
-    const [g,o,rm]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h})]);
+    const [g,o,rm]=await Promise.all([fetch(base+'grille?select=id,name,pts,price,combo,stock,reserve,engage,sort,categorie&order=sort',{headers:h}),fetch(base+'objectifs?select=ym,points,cible_rapide,cible_moyenne,cible_lente',{headers:h}),fetch(base+'remuneration?select=fixe,taux,taux_accel,garantie,garantie_jusqu_a',{headers:h})]);
     if(!g.ok||!o.ok)return;
     const rows=await g.json(),objs=await o.json();
     if(Array.isArray(rows)&&rows.length){
       const act=new Set(rows.map(r=>r.id));
-      rows.forEach(r=>{const p=S.products.find(x=>x.id===r.id);const v={id:r.id,name:r.name,pts:+r.pts,price:+r.price,combo:+r.combo,stock:+r.stock,sort:+r.sort,categorie:r.categorie,active:true};if(p)Object.assign(p,v);else S.products.push(v)});
+      rows.forEach(r=>{const p=S.products.find(x=>x.id===r.id);const v={id:r.id,name:r.name,pts:+r.pts,price:+r.price,combo:+r.combo,stock:+r.stock,reserve:+r.reserve||0,engage:+r.engage||0,sort:+r.sort,categorie:r.categorie,active:true};if(p)Object.assign(p,v);else S.products.push(v)});
       S.products.forEach(p=>{if(!act.has(p.id))p.active=false});
     }
     if(Array.isArray(objs))objs.forEach(x=>{S.objectives[x.ym]=+x.points;(S.cibles=S.cibles||{})[x.ym]={rapide:+x.cible_rapide||0,moyenne:+x.cible_moyenne||0,lente:+x.cible_lente||0}});
@@ -465,7 +468,7 @@ async function trySync(){
     const res=await fetch(S.sync.url.replace(/\/$/,'')+'/rest/v1/operations',{method:'POST',
       headers:{...srvHeaders(S.sync.key),'Prefer':'resolution=ignore-duplicates,return=minimal'},
       body:JSON.stringify(batch.map(b=>({id:b.id,vendor:b.vendor,type:b.type,payload:b.payload,created_at:b.at})))});
-    if(res.ok){const ids=new Set(batch.map(b=>b.id));S.outbox=S.outbox.filter(b=>!ids.has(b.id));S.sync.last=new Date().toISOString();S.sync.err=null;save()}
+    if(res.ok){const ids=new Set(batch.map(b=>b.id));S.outbox=S.outbox.filter(b=>!ids.has(b.id));S.sync.last=new Date().toISOString();S.sync.err=null;save();if(batch.some(b=>b.type.startsWith('vente.')))setTimeout(()=>pullConfig(true),800)}
     else{S.sync.err='Erreur serveur '+res.status;save()}
   }catch(e){S.sync.err='Serveur injoignable';save()}
   syncing=false;renderTop();
@@ -722,8 +725,8 @@ function sellView(){
       :`<button class="btn sec full" data-act="pickclient">Choisir le client</button>`}
     ${k&&k.top.length?`<div class="hstack" style="font-size:12.5px"><span class="muted">Habituel :</span>${k.top.map(([pid])=>`<button class="chip c-info" style="border:0" data-act="addq" data-id="${pid}" data-d="1">+ ${esc(P(pid).name)}</button>`).join('')}</div>`:''}
   </section>
-  <section class="card"><div class="rows">${prods.map(p=>{const q=cart.q[p.id]||0;return `<div class="row prod ${q?'has':''}"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small><span class="pts">${fp(p.pts)} pts</span> · ${fmt(p.price)} HTG${p.stock<=0?' · <span style="color:var(--bad)">rupture dépôt</span>':p.stock<5?' · <span style="color:var(--warn)">'+fq(p.stock)+' en dépôt</span>':''}</small></div>
-    <div class="step"><button data-act="addq" data-id="${p.id}" data-d="-1" aria-label="Retirer une caisse">−</button><input inputmode="decimal" data-qin="${p.id}" value="${q||''}" placeholder="0" aria-label="Caisses ${esc(p.name)}"><button data-act="addq" data-id="${p.id}" data-d="1" aria-label="Ajouter une caisse">+</button></div></div>`}).join('')}</div></section>
+  <section class="card"><div class="rows">${prods.map(p=>{const q=cart.q[p.id]||0;return `<div class="row prod ${q?'has':''}"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small><span class="pts">${fp(p.pts)} pts</span> · ${fmt(p.price)} HTG</small>${(()=>{const a=avail(p.id);if(a===Infinity)return '';return a<=0&&!q?'<div><span class="chip c-bad">Rupture : 0 disponible</span></div>':`<div style="font-size:12.5px;margin-top:2px"><b class="num" style="color:var(${q>=a?'--warn':'--fg'})">${fq(q)} / ${fq(a)}</b> <span class="muted">dispo</span></div>`})()}</div>
+    <div class="step"><button data-act="addq" data-id="${p.id}" data-d="-1" aria-label="Retirer une caisse">−</button><input inputmode="decimal" data-qin="${p.id}" value="${q||''}" placeholder="0" aria-label="Caisses ${esc(p.name)}"><button data-act="addq" data-id="${p.id}" data-d="1" aria-label="Ajouter une caisse" ${q>=avail(p.id)?'disabled style="opacity:.35"':''}>+</button></div></div>`}).join('')}</div></section>
   </div><div class="col-b">
   <section class="card stack">
     <b>Paiement</b>
@@ -866,21 +869,21 @@ document.addEventListener('click',e=>{
     case 'sellto':cart=newCart(id);tab='sell';closeSheet();renderView();scrollTo(0,0);break;
     case 'pickclient':pickClientSheet();break;
     case 'pickc':cart.cid=id;closeSheet();renderView();break;
-    case 'addq':cart.q[id]=Math.max(0,(cart.q[id]||0)+Number(t.dataset.d));renderView();break;
+    case 'addq':{const a=avail(id),nq=Math.max(0,(cart.q[id]||0)+Number(t.dataset.d));if(nq>a){toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(id).name);cart.q[id]=Math.min(cart.q[id]||0,a)}else cart.q[id]=nq;renderView();break}
     case 'pay':cart.pay=t.dataset.v;renderView();break;
     case 'deliv':cart.deliv=t.dataset.v;renderView();break;
     case 'savesale':{
       const lines=Object.entries(cart.q).filter(([,q])=>q>0).map(([pid,qty])=>({pid,qty,price:P(pid).price,pts:P(pid).pts}));
       if(!cart.cid||!lines.length)return;
+      const over=lines.find(l=>l.qty>avail(l.pid));if(over){toast('Stock insuffisant pour '+P(over.pid).name+' : '+fq(avail(over.pid))+' disponible(s)');renderView();return}
       const date=$('#cdate').value||today();
       const o={id:uid(),cid:cart.cid,vend:S.vendor,date,pay:cart.pay,lines,status:cart.deliv,paidAt:cart.pay==='credit'?null:date,note:($('#cnote').value||'').trim(),cname:(C(cart.cid)||{}).name||'',src:'app',createdAt:new Date().toISOString(),gps:recentFix()};
       S.orders.push(o);const c=C(cart.cid);if(c.status==='prospect'){c.status='client';op('client.update',{id:c.id,status:'client'})}
-      lines.forEach(l=>{const p=P(l.pid);if(o.status==='livree')p.stock=Math.max(0,p.stock-l.qty)});
       op('vente.creee',o);
       const pts=orderPts(o);cart=null;
       toast(o.pay==='credit'?`Vente enregistrée · ${fp(pts)} pts en attente de paiement`:`Vente enregistrée · ${fp(pts)} pts dès que la caisse confirme`);
       tab=o.status==='attente'?'orders':'home';if(tab==='orders')oFilter='attente';renderView();scrollTo(0,0);break}
-    case 'deliver':{const o=S.orders.find(x=>x.id===id);o.status='livree';o.deliveredAt=today();o.lines.forEach(l=>{const p=P(l.pid);p.stock=Math.max(0,p.stock-l.qty)});op('vente.livree',{id,at:o.deliveredAt});toast('Commande marquée livrée');renderView();break}
+    case 'deliver':{const o=S.orders.find(x=>x.id===id);o.status='livree';o.deliveredAt=today();op('vente.livree',{id,at:o.deliveredAt});toast('Commande marquée livrée');renderView();break}
     case 'paid':{const o=S.orders.find(x=>x.id===id);o.paidAt=today();op('vente.payee',{id,at:o.paidAt});const st=ptsState(o);toast(st==='aconfirmer'?`Paiement envoyé à la caisse · ${fp(orderPts(o))} pts après confirmation`:st==='valide'?`Payé · +${fp(orderPts(o))} pts validés`:'Payé · après 14 jours, pas de points');renderView();break}
     case 'ltype':document.querySelectorAll('#ltype button').forEach(b=>b.classList.toggle('on',b===t));break;
     case 'addlog':{const c=C(id);const type=(document.querySelector('#ltype .on')||{}).dataset?.t||'Visite';
@@ -933,7 +936,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   const q=e.target.dataset&&e.target.dataset.qin;
-  if(q&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));cart.q[q]=isFinite(v)&&v>0?Math.round(v*2)/2:0;renderView()}
+  if(q&&cart){const v=parseFloat(String(e.target.value).replace(',','.'));let n=isFinite(v)&&v>0?Math.round(v*2)/2:0;const a=avail(q);if(n>a){toast('Seulement '+fq(a)+' caisse(s) disponible(s) pour '+P(q).name);n=Math.floor(a*2)/2}cart.q[q]=n;renderView()}
 });
 
 /* ---------- notifications locales ---------- */
@@ -1128,8 +1131,13 @@ function dirStock(M){
     <div class="choice choice2" id="pa_pay"><button data-act="papay" data-v="cash" class="on">Payé cash</button><button data-act="papay" data-v="credit">Crédit fournisseur</button></div>
     <label class="f" id="pa_ech_w" hidden>Date d'échéance (à payer au fournisseur)<input id="pa_ech" type="date"></label>
     <label class="hstack" style="font-size:13.5px"><input id="pa_maj" type="checkbox" checked> Utiliser ce prix comme nouveau prix d'achat (calcul de la marge)</label>
+    <label class="hstack" style="font-size:13.5px"><input id="pa_dispo" type="checkbox" checked> Rendre ce lot disponible aux vendeurs tout de suite (décoché : il va en réserve)</label>
     <label class="f">Note<input id="pa_note" placeholder="Ex. facture n°, lot d'octobre"></label>
     <button class="btn" data-act="dpurchase">Enregistrer l'achat</button>
+  </section>
+  <section class="card stack"><b>Disponible pour les vendeurs</b><p class="muted" style="margin:0;font-size:12.5px">Choisis combien de caisses les vendeurs peuvent vendre. Le reste est gardé en réserve (dépôt, gros client, commande à venir). Les téléphones l'appliquent à leur prochaine connexion.</p>
+    <div class="grid2"><label class="f">Huile<select id="dp_prod" ${inp}>${rows.map(r=>`<option value="${esc(r.id)}">${esc(r.name)} · stock ${fq(+r.stock||0)}${+r.engage?' · à livrer '+fq(+r.engage):''}</option>`).join('')}</select></label><label class="f">Caisses disponibles pour les vendeurs<input id="dp_n" inputmode="decimal" placeholder="Ex. 30"></label></div>
+    <div class="hstack"><button class="btn sec" data-act="dsetdispo">Enregistrer</button><button class="btn ghost" data-act="dsetdispoall">Tout le stock disponible</button></div>
   </section>
   <section class="card stack"><b>Inventaire (comptage)</b><p class="muted" style="margin:0;font-size:12.5px">Compte les caisses au dépôt et entre le chiffre. L'écart avec le stock de l'app est gardé dans les mouvements.</p>
     <div class="grid2"><label class="f">Huile<select id="iv_prod" ${inp}>${opt}</select></label><label class="f">Caisses comptées<input id="iv_n" inputmode="decimal"></label></div>
@@ -1138,9 +1146,9 @@ function dirStock(M){
   </section>
   ${dettes.length?`<section class="card stack"><b>Dettes fournisseurs</b><div class="rows">${dettes.map(d=>{const late=d.echeance&&d.echeance<t;return `<div class="row"><div class="main"><b>${esc(d.fournisseur||'Fournisseur')} · ${esc((M.grid[d.produit]||{}).name||d.produit)}</b><small>${fq(+d.quantite)} caisses reçues le ${dShort(d.date)} · échéance ${d.echeance?`<span style="color:var(${late?'--bad':'--fg'})">${dShort(d.echeance)}${late?' (dépassée)':''}</span>`:'-'}</small></div><div class="end num"><b>${fmt((+d.quantite||0)*(+d.prix_achat||0))}</b><div><button class="btn sm okb" data-act="dsupplierpaid" data-id="${d.id}">Payé</button></div></div></div>`}).join('')}</div></section>`:''}
   </div><div class="col-b">
-  <section class="card"><b>Stock par huile</b><div style="overflow-x:auto;margin-top:8px"><table class="num" style="border-collapse:collapse;width:100%;min-width:520px;font-size:13.5px">
-    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px">Huile</th><th>Stock</th><th>Ventes / mois</th><th>Jours de stock</th><th>Valeur</th><th>État</th></tr></thead><tbody>
-    ${rows.map(r=>{const R=ROT[r.id]||{};return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px;font-weight:600">${esc(r.name)} ${catChip(r.categorie)}</td><td style="text-align:center"><b>${fq(+r.stock||0)}</b></td><td style="text-align:center">${R.vm==null?'-':fq(Math.round(R.vm*10)/10)}</td><td style="text-align:center">${R.jours==null||(+r.stock||0)<=0?'-':R.jours>365?'> 365':Math.round(R.jours)}</td><td style="text-align:right;white-space:nowrap">${fmt(Math.max(0,+r.stock||0)*(M.cost[r.id]||0))}</td><td style="text-align:center">${status(r)}</td></tr>`}).join('')}
+  <section class="card"><b>Stock par huile</b><div style="overflow-x:auto;margin-top:8px"><table class="num" style="border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px">
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px">Huile</th><th>Stock</th><th>Réservé</th><th>À livrer</th><th>Dispo vendeurs</th><th>Ventes / mois</th><th>Jours de stock</th><th>Valeur</th><th>État</th></tr></thead><tbody>
+    ${rows.map(r=>{const R=ROT[r.id]||{};return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 4px;font-weight:600">${esc(r.name)} ${catChip(r.categorie)}</td><td style="text-align:center"><b>${fq(+r.stock||0)}</b></td><td style="text-align:center">${+r.reserve?fq(+r.reserve):'-'}</td><td style="text-align:center">${+r.engage?fq(+r.engage):'-'}</td><td style="text-align:center"><b style="color:var(--pts)">${fq(Math.max(0,(+r.stock||0)-(+r.reserve||0)-(+r.engage||0)))}</b></td><td style="text-align:center">${R.vm==null?'-':fq(Math.round(R.vm*10)/10)}</td><td style="text-align:center">${R.jours==null||(+r.stock||0)<=0?'-':R.jours>365?'> 365':Math.round(R.jours)}</td><td style="text-align:right;white-space:nowrap">${fmt(Math.max(0,+r.stock||0)*(M.cost[r.id]||0))}</td><td style="text-align:center">${status(r)}</td></tr>`}).join('')}
     </tbody></table></div><p class="muted" style="margin:8px 0 0;font-size:12px">À commander : moins de 15 jours de stock. Dormant : plus de 90 jours de stock.</p></section>
   <section class="card"><b>Derniers mouvements</b><div class="rows" style="margin-top:6px">${M.mouv.slice(0,40).map(m=>{const T=TYP[m.type]||[m.type,'c-mute'];return `<div class="row"><div class="main"><b>${esc((M.grid[m.produit]||{}).name||m.produit)}</b><small>${dShort(m.date)} · ${m.type==='vente'?esc(m.vendeur||''):esc(m.fournisseur||m.note||'')}${m.prix_achat?' · '+fmt(+m.prix_achat)+' HTG/caisse':''}</small></div><div class="end"><span class="chip ${T[1]}">${T[0]}</span><div class="num" style="font-weight:600;color:var(${+m.quantite<0?'--bad':'--ok'})">${+m.quantite>0?'+':''}${fq(+m.quantite)}</div></div></div>`}).join('')||'<div class="empty">Aucun mouvement pour le moment.</div>'}</div></section>
   </div></div>`;
@@ -1316,9 +1324,12 @@ document.addEventListener('click',async e=>{
     t.disabled=true;
     try{
       if(prod==='__new'){const r=await dirCall({action:'addProduct',produit:{name:$('#np_name').value,categorie:$('#np_cat').value,pts:num('#np_pts'),price:num('#np_price'),prix_achat:num('#pa_prix'),lot:num('#pa_qte')}});prod=r.id}
-      await dirCall({action:'addPurchase',achat:{produit:prod,date:$('#pa_date').value,quantite:num('#pa_qte'),prix_achat:num('#pa_prix'),fournisseur:$('#pa_four').value,paiement:pay,echeance:$('#pa_ech').value,maj_prix:$('#pa_maj').checked,note:$('#pa_note').value}});
+      await dirCall({action:'addPurchase',achat:{produit:prod,date:$('#pa_date').value,quantite:num('#pa_qte'),prix_achat:num('#pa_prix'),fournisseur:$('#pa_four').value,paiement:pay,echeance:$('#pa_ech').value,maj_prix:$('#pa_maj').checked,dispo:$('#pa_dispo').checked,note:$('#pa_note').value}});
       toast('Achat enregistré : stock mis à jour');dirLoad();
     }catch(err){t.disabled=false;toast(err.message)}}
+  else if(a==='dsetdispo'||a==='dsetdispoall'){const pid=$('#dp_prod').value,r=(dirModel().grid[pid]||{}),n=a==='dsetdispoall'?Math.max(0,(+r.stock||0)-(+r.engage||0)):parseFloat(String($('#dp_n').value).replace(',','.'));
+    if(!(n>=0)){toast('Écris le nombre de caisses disponibles');return}t.disabled=true;
+    try{const res=await dirCall({action:'setDispo',produit:pid,dispo:n});toast('Disponible vendeurs : '+fq(Math.max(0,(+r.stock||0)-(+res.reserve||0)-(+r.engage||0)))+' caisse(s) · réserve '+fq(+res.reserve||0));dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dinventaire'){t.disabled=true;try{const r=await dirCall({action:'inventaire',produit:$('#iv_prod').value,compte:parseFloat(String($('#iv_n').value).replace(',','.')),note:$('#iv_note').value});toast('Comptage enregistré · écart '+(r.ecart>0?'+':'')+fq(+r.ecart)+' caisse(s)');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dsupplierpaid'){t.disabled=true;try{await dirCall({action:'supplierPaid',id:+t.dataset.id});toast('Dette fournisseur marquée payée');dirLoad()}catch(err){t.disabled=false;toast(err.message)}}
   else if(a==='dmf'){D.mf[t.dataset.f]=!D.mf[t.dataset.f];dirRender()}
