@@ -68,6 +68,19 @@ main{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-lef
 .bar{height:10px;background:rgba(255,255,255,.18);border-radius:99px;overflow:hidden;margin-top:12px;position:relative}
 .bar span{display:block;height:100%;background:#fff;border-radius:99px}
 .bar em{position:absolute;top:0;height:100%;background:rgba(255,255,255,.45)}
+.bar .tick{position:absolute;top:-4px;bottom:-4px;width:2px;background:rgba(255,255,255,.75);border-radius:1px;transform:translateX(-1px)}
+.bar .tick.now{background:#ffd166;width:3px;top:-6px;bottom:-6px}
+.ticks{position:relative;height:16px;margin-top:6px;font-size:10.5px;opacity:.9}
+.ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.ticks span.cur{font-weight:700;color:#ffd166}
+.sbar{position:relative;height:14px;border-radius:99px;background:linear-gradient(90deg,var(--brand-soft) 0 var(--z),var(--ok-soft) var(--z) 100%);overflow:visible;margin-top:4px}
+.sbar>b{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--brand)}
+.sbar>i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--brand);opacity:.3}
+.sbar .mk{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--fg);opacity:.55}
+.sbar .mk.acc{background:var(--ok);opacity:1;width:3px}
+.slab{position:relative;height:30px;font-size:11px;color:var(--muted);margin-top:4px}
+.slab span{position:absolute;transform:translateX(-50%);text-align:center;line-height:1.25;white-space:nowrap}
+.slab span.acc{color:var(--ok);font-weight:600}
 .hero-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .hero-grid div{background:rgba(255,255,255,.1);border-radius:10px;padding:8px 10px}
 .hero-grid b{display:block;font-family:var(--f-display);font-size:18px}
@@ -504,7 +517,10 @@ function homeView(){
   <section class="card hero">
     <div class="month-nav"><span class="lbl">Points ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="mprev" aria-label="Mois précédent">‹</button><button data-act="mnext" aria-label="Mois suivant" ${isCur?'disabled':''}>›</button></span></div>
     <div class="big num">${fp(st.valide)} <small>/ ${fmt(obj)} pts</small></div>
-    <div class="bar" aria-label="Progression objectif"><em style="width:${pctAll}%"></em><span style="width:${pct}%"></span></div>
+    ${(()=>{const wk=[7,14,21,28].filter(d=>d<daysInM).map((d,i)=>({i:i+1,d,t:Math.round(obj*d/daysInM)})),cw=isCur?wk.find(w=>dayN<=w.d):null,ref=isCur?Math.round(obj*dayN/daysInM):obj;
+      return `<div class="bar" aria-label="Progression objectif"><em style="width:${pctAll}%"></em><span style="width:${pct}%"></span>${wk.map(w=>`<i class="tick" style="left:${w.t/obj*100}%"></i>`).join('')}${isCur?`<i class="tick now" style="left:${Math.min(100,ref/obj*100)}%" title="Où tu devrais être aujourd'hui"></i>`:''}</div>
+      <div class="ticks">${wk.map(w=>`<span class="${cw&&cw.i===w.i?'cur':''}" style="left:${w.t/obj*100}%">S${w.i} · ${w.t}</span>`).join('')}</div>
+      ${isCur&&cw?`<div style="font-size:12.5px;margin-top:2px;opacity:.95">Repère semaine ${cw.i} (au ${cw.d} ${MC[m-1]}) : <b>${cw.t} pts</b> · ${st.valide>=cw.t?'repère déjà atteint':'encore '+fp(cw.t-st.valide)+' pts'} · aujourd'hui tu devrais être à ${ref} pts ${st.valide>=ref?'<b style="color:#8ef0b5">(en avance)</b>':'<b style="color:#ffd166">(en retard de '+fp(ref-st.valide)+')</b>'}</div>`:''}`})()}
     <div class="hstack" style="justify-content:space-between;margin-top:6px;font-size:12.5px;opacity:.9"><span>${st.valide>=obj?'Objectif atteint':'Encore '+fp(obj-st.valide)+' pts pour l\'objectif'}</span><span>${isCur?'Jour '+dayN+' / '+daysInM:'Mois terminé'}</span></div>
     <div class="hero-grid">
       <div><b class="num">${fp(st.attente)}</b><small>pts en attente${st.aconf?' (dont '+fp(st.aconf)+' à confirmer par la caisse)':''}</small></div>
@@ -539,11 +555,18 @@ function salaryCard(st,obj){
   return `<div class="sec-title">Salaire ${isCur?'estimé':''} · ${ymLabel(ym)}</div>
   <section class="card stack">${notice}
     <div class="hstack" style="justify-content:space-between;align-items:baseline"><b class="num" style="font-family:var(--f-display);font-size:24px">${fmt(sal.total)} HTG</b>${sal.garanti&&sal.total>sal.formule?'<span class="chip c-info">Garantie '+fmt(R.garantie)+' HTG</span>':''}</div>
+    ${(()=>{const mx=Math.max(Math.round(obj*1.4),Math.ceil((st.valide+st.aconf)*1.1)),pc=x=>Math.min(100,x/mx*100),brk=sal.garanti&&R.taux>0?Math.ceil((R.garantie-R.fixe)/R.taux):null;
+      return `<div><div class="hstack" style="justify-content:space-between;font-size:12.5px"><span><b>${fp(st.valide)} pts</b> validés${st.aconf?` <span class="muted">(+${fp(st.aconf)} à confirmer)</span>`:''}</span><span class="muted">${st.valide>=obj?`<b style="color:var(--ok)">Taux ${String(R.taux_accel).replace('.',',')} HTG débloqué*</b>`:`encore <b>${fp(obj-st.valide)} pts</b> pour passer à ${String(R.taux_accel).replace('.',',')} HTG/pt`}</span></div>
+      <div class="sbar" style="--z:${pc(obj)}%" role="img" aria-label="Progression vers le taux à ${R.taux_accel} HTG par point"><i style="width:${pc(st.valide+st.aconf)}%"></i><b style="width:${pc(st.valide)}%"></b>${brk&&brk<mx&&brk!==obj?`<span class="mk" style="left:${pc(brk)}%"></span>`:''}<span class="mk acc" style="left:${pc(obj)}%"></span></div>
+      <div class="slab"><span style="left:0;transform:none;text-align:left">0<br>${String(R.taux).replace('.',',')} HTG/pt</span>${brk&&brk<mx&&Math.abs(brk-obj)>30?`<span style="left:${pc(brk)}%">${brk}<br>&gt; garantie</span>`:''}<span class="acc" style="left:${pc(obj)}%">${obj} pts<br>${String(R.taux_accel).replace('.',',')} HTG/pt</span><span style="right:0;left:auto;transform:none;text-align:right">${mx}</span></div></div>`})()}
     <div class="rows">
       <div class="row"><div class="main">Fixe</div><div class="end num">${fmt(R.fixe)}</div></div>
       <div class="row"><div class="main">${fp(Math.min(st.valide,obj))} pts × ${String(R.taux).replace('.',',')} HTG</div><div class="end num">${fmt(sal.base)}</div></div>
       ${sal.sup?`<div class="row"><div class="main">${fp(sal.sup)} pts au-delà de ${obj} <small>· ${String(R.taux_accel).replace('.',',')} HTG si la Direction confirme les conditions</small></div><div class="end num">${fmt(sal.extra)}+</div></div>`:`<div class="row"><div class="main muted">Au-delà de ${obj} pts : jusqu'à ${String(R.taux_accel).replace('.',',')} HTG par point</div><div class="end"></div></div>`}
+      <div class="row"><div class="main"><b>Total formule</b></div><div class="end num"><b>${fmt(sal.formule)}</b></div></div>
+      ${sal.garanti&&sal.total>sal.formule?`<div class="row"><div class="main"><b>Total payé</b> <small class="muted">· garantie de transition</small></div><div class="end num"><b>${fmt(sal.total)}</b></div></div>`:''}
     </div>
+    ${st.valide>=obj?`<small class="muted">* ${String(R.taux_accel).replace('.',',')} HTG par point au-delà de ${obj} si la Direction confirme la marge et les paiements à temps ; sinon ${String(R.taux).replace('.',',')} HTG.</small>`:''}
     ${ifConf?`<small class="muted">Si la caisse confirme tes paiements en attente : ${fmt(ifConf)} HTG.</small>`:''}
     ${sal.garanti?`<small class="muted">Transition : tu touches au moins ${fmt(R.garantie)} HTG jusqu'en ${ymLabel(R.garantie_jusqu_a)}, ou plus si la formule donne plus.</small>`:''}
   </section>`;
