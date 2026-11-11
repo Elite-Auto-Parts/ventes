@@ -360,7 +360,8 @@ function salaire(R,ym,pts,obj,accelOk){R={...REMU0,...(R||{})};['fixe','taux','t
   return {base,extra,sup,formule,garanti,total:garanti?Math.max(R.garantie,formule):formule,accel:accelOk&&sup>0,R}}
 const ymLabel=ym=>{const [y,m]=ym.split('-').map(Number);return MOIS[m-1]+' '+y};
 const CK={rapide:'R',moyenne:'M',lente:'L'};
-const catBars=(have,cib,extra)=>['rapide','moyenne','lente'].map(c=>{const q=have[c]||0,t=cib[c]||0,pc=t?Math.min(100,q/t*100):100;return `<div class="row"><div class="main"><b>${CAT[c][0]}</b>${extra&&extra[c]?`<small> · +${fq(extra[c])} en attente</small>`:''}<div class="mini-bar"><span class="${q>=t?'done':''}" style="width:${pc}%"></span></div></div><div class="end num"><b>${fq(q)}</b><small class="muted"> / ${t} caisses</small></div></div>`}).join('');
+const dispoChips=c=>{const ps=S.products.filter(p=>p.active!==false&&(p.categorie||'moyenne')===c).sort((a,b)=>b.pts-a.pts);if(!ps.length)return '';return `<div class="hstack" style="flex-wrap:wrap;gap:5px;margin-top:6px">${ps.map(p=>{const a=avail(p.id),out=a!==Infinity&&a<=0;return `<span class="chip ${out?'c-bad':a!==Infinity&&a<5?'c-warn':'c-mute'}" style="font-size:11px">${esc(p.name)} · <b class="num">${a===Infinity?'?':out?'rupture':fq(a)}</b></span>`}).join('')}</div>`};
+const catBars=(have,cib,extra,dispo)=>['rapide','moyenne','lente'].map(c=>{const q=have[c]||0,t=cib[c]||0,pc=t?Math.min(100,q/t*100):100;return `<div class="row" style="align-items:flex-start"><div class="main"><b>${CAT[c][0]}</b>${extra&&extra[c]?`<small> · +${fq(extra[c])} en attente</small>`:''}<div class="mini-bar"><span class="${q>=t?'done':''}" style="width:${pc}%"></span></div>${dispo?`<small class="muted" style="display:block;margin-top:6px">Disponible (caisses) :</small>${dispoChips(c)}`:''}</div><div class="end num"><b>${fq(q)}</b><small class="muted"> / ${t} caisses</small></div></div>`}).join('');
 function orderPts(o){return o.lines.reduce((s,l)=>s+l.qty*(l.pts??P(l.pid).pts),0)}
 function orderAmt(o){return o.lines.reduce((s,l)=>s+l.qty*(l.price||P(l.pid).price),0)}
 function orderCases(o){return o.lines.reduce((s,l)=>s+l.qty,0)}
@@ -679,15 +680,15 @@ function homeDay(){
       <div class="feu"><small><span class="dot ${f3}"></span>Encaissement</small><b class="num">${late.length}</b><small>${late.length?'crédit(s) en retard (> 14 j)':'tout est à jour'}</small>${oldLate?`<small class="muted" style="display:block;margin-top:2px">+ ${oldLate} ancien(s) crédit(s) Excel à relancer</small>`:''}</div>
     </div>
   </section>`:''}
-  <div class="sec-title">Objectif par catégorie (caisses payées)</div>
-  <section class="card"><div class="rows">${catBars(st.catV,cib,st.catA)}</div><small class="muted" style="display:block;margin-top:8px">Clients qui ont acheté une huile lente ce mois : <b>${new Set(S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee'&&o.lines.some(l=>P(l.pid).categorie==='lente')).map(o=>o.cid)).size}</b> · chaque nouveau client crée le marché.</small></section>
   <div class="sec-title">Nouveaux clients Elite</div>
   <section class="card stack">${newCliCard(ym)}</section>
+  <div class="sec-title">Objectif par catégorie (caisses payées)</div>
+  <section class="card"><div class="rows">${catBars(st.catV,cib,st.catA,isCur)}</div><small class="muted" style="display:block;margin-top:8px">Clients qui ont acheté une huile lente ce mois : <b>${new Set(S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee'&&o.lines.some(l=>P(l.pid).categorie==='lente')).map(o=>o.cid)).size}</b> · chaque nouveau client crée le marché.</small></section>
   </div><div class="col-b">
   <div class="sec-title">Caisses vendues et points</div>
   <section class="card"><div class="rows">${prodRows||'<div class="empty">Aucune vente ce mois.</div>'}</div></section>
   <div class="sec-title">Grille des points du mois</div>
-  <section class="card"><div class="rows">${S.products.filter(p=>p.active!==false).sort((a,b)=>(CORDER[a.categorie]??1)-(CORDER[b.categorie]??1)||b.pts-a.pts).map(p=>`<div class="row"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small>${fmt(p.price)} HTG la caisse</small></div><div class="end pts num">${fp(p.pts)} pts</div></div>`).join('')}</div></section></div></div>`;
+  <section class="card"><div class="rows">${S.products.filter(p=>p.active!==false).sort((a,b)=>(CORDER[a.categorie]??1)-(CORDER[b.categorie]??1)||b.pts-a.pts).map(p=>`<div class="row"><div class="main"><b>${esc(p.name)} ${catChip(p.categorie)}</b><small>${fmt(p.price)} HTG la caisse${(()=>{const a=avail(p.id);return a===Infinity?'':` · <span style="font-weight:600;color:var(${a<=0?'--bad':a<5?'--warn':'--ok'})">${a<=0?'rupture':fq(a)+' caisse'+(a>1?'s':'')+' disponible'+(a>1?'s':'')}</span>`})()}</small></div><div class="end pts num">${fp(p.pts)} pts</div></div>`).join('')}</div></section></div></div>`;
 }
 
 function salaryCard(st,obj){
