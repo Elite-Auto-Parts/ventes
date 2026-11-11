@@ -905,7 +905,8 @@ function dirControles(M,agg){
   const t=today(),cur=t.slice(0,7),rows=Object.values(agg);
   const card=(title,desc,inner)=>`<section class="card stack"><b>${title}</b><p class="muted" style="margin:0;font-size:12.5px">${desc}</p>${inner}</section>`;
   // 1. fin de mois
-  const fin=rows.filter(a=>a.fin!=null&&a.ym<cur).sort((a,b)=>a.ym<b.ym?1:-1).slice(0,16);
+  const done=[...new Set(rows.filter(a=>a.fin!=null&&a.ym<cur).map(a=>a.ym))].sort().reverse(),lastM=done[0];
+  const fin=rows.filter(a=>a.fin!=null&&a.ym<cur&&(a.ym===lastM||a.fin>35)).sort((a,b)=>a.ym<b.ym?1:a.ym>b.ym?-1:b.fin-a.fin);
   const finHtml=fin.length?`<div class="rows">${fin.map(a=>`<div class="row"><div class="main"><b>${esc(a.v)}</b><small>${ymLabel(a.ym)}</small></div><div class="end"><span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} % des points</span></div></div>`).join('')}</div>`:'<div class="empty">Pas encore de mois terminé.</div>';
   // 2. saisies tardives (60 derniers jours)
   const tard=M.orders.filter(o=>o.enteredAt&&days(o.date,o.enteredAt)>3&&days(o.date,t)<=60).sort((a,b)=>a.enteredAt<b.enteredAt?1:-1);
@@ -913,10 +914,10 @@ function dirControles(M,agg){
   // 3. lentes > 50 % des points et marge < 100 000, 2 mois de suite
   const flag=a=>a.pts>0&&a.ptsL/a.pts>0.5&&a.marge<100000;
   const sig=rows.filter(a=>flag(a)&&agg[prevYm(a.ym)+'|'+a.v]&&flag(agg[prevYm(a.ym)+'|'+a.v]));
-  const sigHtml=sig.length?`<div class="rows">${sig.map(a=>`<div class="row"><div class="main"><b>${esc(a.v)}</b><small>${ymLabel(prevYm(a.ym))} et ${ymLabel(a.ym)} · ${Math.round(a.ptsL/a.pts*100)} % des points en lentes · marge ${fmt(a.marge)} HTG</small></div><div class="end"><span class="chip c-bad">À discuter</span></div></div>`).join('')}</div>`:'<div class="empty">Aucun agent concerné.</div>';
+  const sigHtml=sig.length?`<div class="rows">${sig.map(a=>`<div class="row"><div class="main"><b>${esc(a.v)}</b><small>${ymLabel(prevYm(a.ym))} et ${ymLabel(a.ym)} · ${a.src.has('Excel')?'≈ ':''}${Math.round(a.ptsL/a.pts*100)} % des points en lentes · marge ${fmt(a.marge)} HTG</small></div><div class="end"><span class="chip c-bad">À discuter</span></div></div>`).join('')}</div>`:'<div class="empty">Aucun agent concerné.</div>';
   // live: current month last-5-days share
   const live=rows.filter(a=>a.ym===cur&&a.src.has('App')&&a.pts>0&&lastDays(cur,5)(t));
-  return card('Points faits les 5 derniers jours du mois','Au-dessus de 35 % : vérifier que les clients n\'ont pas été « remplis » pour atteindre l\'objectif (regarder s\'ils recommandent le mois suivant).',finHtml+(live.length?`<small class="muted">Mois en cours : ${live.map(a=>esc(a.v)+' '+Math.round(a.last5/a.pts*100)+' %').join(' · ')}</small>`:''))
+  return card('Points faits les 5 derniers jours du mois','Dernier mois terminé, plus tous les mois au-dessus de 35 %. Au-dessus de 35 % : vérifier que les clients n\'ont pas été « remplis » pour atteindre l\'objectif (regarder s\'ils recommandent le mois suivant).',finHtml+(live.length?`<small class="muted">Mois en cours : ${live.map(a=>esc(a.v)+' '+Math.round(a.last5/a.pts*100)+' %').join(' · ')}</small>`:''))
    +card('Ventes saisies en retard','Ventes saisies plus de 3 jours après la date de vente (60 derniers jours). À vérifier : une vente du mois passé ne doit pas compter dans le mois en cours.',tardHtml)
    +card('Beaucoup de lentes, peu de marge','Agents avec plus de 50 % des points en huiles lentes et moins de 100 000 HTG de marge payée, deux mois de suite. C\'est un sujet de discussion au comité, pas une sanction.',sigHtml);
 }
