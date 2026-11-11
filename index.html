@@ -524,7 +524,7 @@ function homeView(){
     </div>
   </section>`:''}
   <div class="sec-title">Objectif par catégorie (caisses payées)</div>
-  <section class="card"><div class="rows">${catBars(st.catV,cib,st.catA)}</div></section>
+  <section class="card"><div class="rows">${catBars(st.catV,cib,st.catA)}</div><small class="muted" style="display:block;margin-top:8px">Clients qui ont acheté une huile lente ce mois : <b>${new Set(S.orders.filter(o=>o.date.slice(0,7)===ym&&o.status!=='annulee'&&o.lines.some(l=>P(l.pid).categorie==='lente')).map(o=>o.cid)).size}</b> · chaque nouveau client crée le marché.</small></section>
   </div><div class="col-b">
   <div class="sec-title">Caisses vendues et points</div>
   <section class="card"><div class="rows">${prodRows||'<div class="empty">Aucune vente ce mois.</div>'}</div></section>
@@ -827,7 +827,7 @@ function dirModel(){
   const obj=Object.fromEntries((d.objectifs||[]).map(o=>[o.ym,o.points]));
   const orders={},names={...(d.names||{})},newClients={};
   (d.ops||[]).forEach(op=>{const p=op.payload||{};
-    if(op.type==='vente.creee')orders[p.id]={...p,vend:op.vendor};
+    if(op.type==='vente.creee')orders[p.id]={...p,vend:op.vendor,enteredAt:String(p.createdAt||op.created_at||p.date).slice(0,10)};
     else if(op.type==='vente.payee'&&orders[p.id])orders[p.id].paidAt=p.at;
     else if(op.type==='paiement.confirme'&&orders[p.id]){orders[p.id].confirmedAt=p.at;orders[p.id].refusedAt=null}
     else if(op.type==='paiement.refuse'&&orders[p.id]){const o=orders[p.id];o.paidAt=null;o.confirmedAt=null;o.refusedAt=p.at}
@@ -845,14 +845,15 @@ const oAmt=o=>o.lines.reduce((s,l)=>s+l.qty*(l.price||0),0);
 function oState(o,t){if(o.paidAt){if(days(o.date,o.paidAt)>DELAI)return 'perdu';return o.confirmedAt?'valide':'aconfirmer'}return days(o.date,t)<=DELAI?'attente':'perdu'}
 function dirStats(M,ym){
   const t=today(),objM=M.obj[ym]||440,perDay=Math.round(objM/26),vend={};
-  const get=v=>vend[v]||(vend[v]={v,valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},today:0,late:[],lateAmt:0,newC:0,orders:0,clients:new Set(),catV:{},catA:{},margeV:0});
+  const get=v=>vend[v]||(vend[v]={v,valide:0,attente:0,perdu:0,cases:0,amt:0,byP:{},today:0,late:[],lateAmt:0,newC:0,orders:0,clients:new Set(),catV:{},catA:{},margeV:0,cashL:0,clL:new Set(),tard:[]});
   M.orders.forEach(o=>{
     const st0=oState(o,t),st=st0==='aconfirmer'?'attente':st0;
     if(o.pay==='credit'&&!o.paidAt&&days(o.date,t)>DELAI){const g=get(o.vend);g.late.push(o);g.lateAmt+=oAmt(o)}
     if(o.date.slice(0,7)!==ym)return;
     const g=get(o.vend);g[st]+=oPts(o);g.cases+=o.lines.reduce((s,l)=>s+l.qty,0);g.amt+=oAmt(o);g.orders++;g.clients.add(o.cid);
     if(o.date===t)g.today+=oPts(o);
-    o.lines.forEach(l=>{g.byP[l.pid]=(g.byP[l.pid]||0)+l.qty;const gr=M.grid[l.pid]||{},c=gr.categorie||'moyenne';if(st==='valide'){g.catV[c]=(g.catV[c]||0)+l.qty;const pv=+l.price||+gr.price||0;g.margeV+=l.qty*(pv-(M.cost[l.pid]??pv))}else if(st==='attente')g.catA[c]=(g.catA[c]||0)+l.qty});
+    if(o.enteredAt&&days(o.date,o.enteredAt)>3)g.tard.push(o);
+    o.lines.forEach(l=>{g.byP[l.pid]=(g.byP[l.pid]||0)+l.qty;const gr=M.grid[l.pid]||{},c=gr.categorie||'moyenne';if(st==='valide'){g.catV[c]=(g.catV[c]||0)+l.qty;const pv=+l.price||+gr.price||0;g.margeV+=l.qty*(pv-(M.cost[l.pid]??pv));if(c==='lente'){g.cashL+=l.qty*(M.cost[l.pid]??pv);g.clL.add(o.cid)}}else if(st==='attente')g.catA[c]=(g.catA[c]||0)+l.qty});
   });
   Object.entries(M.newClients).forEach(([v,l])=>{get(v).newC=l.filter(c=>c.date.slice(0,7)===ym).length});
   const cib=M.cib[ym]||CIB0;
@@ -868,27 +869,56 @@ function dirStats(M,ym){
 }
 
 // Mois passés : historique Excel (jusqu'au 6 nov. 2026) + ventes saisies dans l'app, par agent et par mois
-function dirMonths(M){
-  const agg={},key=(ym,v)=>{const k=ym+'|'+v;return agg[k]||(agg[k]={ym,v,cR:0,cM:0,cL:0,cases:0,pts:0,vente:0,marge:0,hm:0,np:0,att:0,src:new Set()})};
-  M.hist.forEach(h=>{const a=key(h.ym,h.vendor);a.cR+=+h.caisses_rapides||0;a.cM+=+h.caisses_moyennes||0;a.cL+=+h.caisses_lentes||0;a.cases+=+h.caisses||0;a.pts+=+h.points_valides||0;a.vente+=+h.ventes||0;a.marge+=+h.marge_validee||0;a.hm+=+h.marge_hors_motex||0;a.np+=+h.non_paye||0;a.src.add('Excel')});
+// Agrégat mensuel par agent : historique Excel + ventes de l'app (points validés = confirmés par la caisse)
+const lastDays=(ym,n)=>{const [y,m]=ym.split('-').map(Number),dim=new Date(y,m,0).getDate();return d=>+d.slice(8,10)>dim-n};
+function monthAgg(M){
+  const agg={},key=(ym,v)=>{const k=ym+'|'+v;return agg[k]||(agg[k]={ym,v,cR:0,cM:0,cL:0,cases:0,pts:0,ptsL:0,vente:0,marge:0,hm:0,np:0,att:0,cashL:0,clL:new Set(),clLh:0,last5:0,fin:null,src:new Set()})};
+  M.hist.forEach(h=>{const a=key(h.ym,h.vendor);a.cR+=+h.caisses_rapides||0;a.cM+=+h.caisses_moyennes||0;a.cL+=+h.caisses_lentes||0;a.cases+=+h.caisses||0;a.pts+=+h.points_valides||0;a.ptsL+=Math.min(+h.points_valides||0,(+h.caisses_lentes||0)*3);a.vente+=+h.ventes||0;a.marge+=+h.marge_validee||0;a.hm+=+h.marge_hors_motex||0;a.np+=+h.non_paye||0;a.cashL+=+h.cash_lentes||0;a.clLh+=+h.clients_lentes||0;if(h.pct_fin_mois!=null)a.fin=+h.pct_fin_mois;a.src.add('Excel')});
   const t=today();
-  M.orders.forEach(o=>{if(o.status==='annulee')return;const a=key(o.date.slice(0,7),o.vend);a.src.add('App');
-    if(!o.paidAt)a.np+=oAmt(o);const st=oState(o,t);
+  M.orders.forEach(o=>{if(o.status==='annulee')return;const ym=o.date.slice(0,7),a=key(ym,o.vend);a.src.add('App');
+    if(!o.paidAt)a.np+=oAmt(o);const st=oState(o,t),l5=lastDays(ym,5)(o.date);
     o.lines.forEach(l=>{const g=M.grid[l.pid]||{},c=g.categorie||'moyenne',q=+l.qty||0,pv=+l.price||+g.price||0,pa=M.cost[l.pid]??pv,m=q*(pv-pa),pt=q*(l.pts??(+g.pts||0));
       a['c'+(c==='rapide'?'R':c==='lente'?'L':'M')]+=q;a.cases+=q;a.vente+=q*pv;
-      if(st==='valide'){a.pts+=pt;a.marge+=m;if(l.pid!=='motext')a.hm+=m}else if(st==='attente'||st==='aconfirmer')a.att+=pt})});
+      if(st==='valide'){a.pts+=pt;a.marge+=m;if(l.pid!=='motext')a.hm+=m;if(l5)a.last5+=pt;if(c==='lente'){a.ptsL+=pt;a.cashL+=q*pa;a.clL.add(o.cid)}}
+      else if(st==='attente'||st==='aconfirmer')a.att+=pt})});
+  Object.values(agg).forEach(a=>{a.nClL=a.clLh+a.clL.size;if(a.src.has('App')&&a.pts)a.fin=a.last5/a.pts*100*(a.src.has('Excel')?NaN:1);if(Number.isNaN(a.fin))a.fin=null});
+  return agg;
+}
+const prevYm=ym=>{const [y,m]=ym.split('-').map(Number);return iso(new Date(y,m-2,1)).slice(0,7)};
+function dirMonths(M){
+  const agg=monthAgg(M),t=today();
   const months=[...new Set(Object.values(agg).map(a=>a.ym))].sort().reverse();
   if(!months.length)return '<div class="card empty">Aucun mois à afficher.</div>';
   const cur=t.slice(0,7);
-  return `<p class="muted" style="margin:0;font-size:12.5px">Points validés et marge sur les ventes payées seulement (grille actuelle). Salaire = formule actuelle (fixe ${fmt(M.remu.fixe)} + points × ${String(M.remu.taux).replace('.',',')} HTG, ${String(M.remu.taux_accel).replace('.',',')} HTG au-delà de l'objectif si ${fmt(M.objMarge)} HTG de marge) ; avant décembre 2026, c'est une simulation. Jusqu'au 6 novembre 2026 : Liste Commande (Excel). Ensuite : ventes saisies dans l'app. Marge = prix de vente - prix d'achat. Visible par la Direction seulement.</p>`+months.map(ym=>{
+  return `<p class="muted" style="margin:0;font-size:12.5px">Points validés et marge sur les ventes payées seulement (grille actuelle). Cash libéré = prix d'achat des caisses lentes vendues et payées. Clients lentes : clients différents qui ont acheté une huile lente (écart vs mois précédent, cible +3). % pts 5 derniers jours : au-dessus de 35 %, vérifier un remplissage de fin de mois. Salaire = formule actuelle (fixe ${fmt(M.remu.fixe)} + points × ${String(M.remu.taux).replace('.',',')} HTG, ${String(M.remu.taux_accel).replace('.',',')} HTG au-delà de l'objectif si ${fmt(M.objMarge)} HTG de marge) ; avant décembre 2026, c'est une simulation. Jusqu'au 6 novembre 2026 : Liste Commande (Excel). Ensuite : ventes saisies dans l'app. Marge = prix de vente - prix d'achat. Visible par la Direction seulement.</p>`+months.map(ym=>{
     const rows=Object.values(agg).filter(a=>a.ym===ym).sort((a,b)=>b.pts-a.pts),obj=M.obj[ym]||440,cb=M.cib[ym]||CIB0,[y,m]=ym.split('-').map(Number);
     const tot=rows.reduce((s,a)=>({pts:s.pts+a.pts,marge:s.marge+a.marge,vente:s.vente+a.vente,cases:s.cases+a.cases}),{pts:0,marge:0,vente:0,cases:0});
     const td='style="padding:6px 5px;text-align:center;white-space:nowrap"';
     return `<section class="card stack"><div class="hstack" style="justify-content:space-between"><b style="font-size:16px">${MOIS[m-1][0].toUpperCase()+MOIS[m-1].slice(1)} ${y}${ym===cur?' <span class="chip c-info">en cours</span>':''}</b><span class="muted num" style="font-size:12.5px">${fq(tot.cases)} caisses · ${fmt(tot.marge)} HTG de marge</span></div>
-    <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;min-width:640px;font-size:13px">
-    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
-    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
+    <div style="overflow-x:auto"><table class="num" style="border-collapse:collapse;width:100%;min-width:980px;font-size:13px">
+    <thead><tr style="color:var(--muted);font-size:11.5px;text-align:center"><th style="text-align:left;padding:4px 5px">Agent</th><th>Pts validés</th><th>% de ${obj}</th><th>Marge payée</th><th>${fmt(M.objMarge/1000)} 000 ?</th><th>Salaire (formule)</th><th>Cash libéré (lentes)</th><th>Clients lentes</th><th>% pts 5 derniers jours</th><th>Rapides</th><th>Moyennes</th><th>Lentes</th><th>Caisses</th><th>Ventes</th><th>Hors Motex</th></tr></thead><tbody>
+    ${rows.map(a=>{const pc=a.pts/obj*100,ok=a.marge>=M.objMarge,pr=salaire(M.remu,ym,a.pts,obj,ok&&a.pts>=obj).total,cc=(q,t)=>`<span style="color:var(${q>=t?'--ok':'--fg'})">${fq(q)}</span><small class="muted"> / ${t}</small>`;return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 5px;font-weight:600;white-space:nowrap">${esc(a.v)}</td><td ${td}><b class="pts">${fp(a.pts)}</b>${a.att?`<div class="muted" style="font-size:11px">+${fp(a.att)} en attente</div>`:''}</td><td ${td}><span class="chip ${pc>=100?'c-ok':pc>=70?'c-warn':'c-bad'}">${Math.round(pc)} %</span></td><td ${td}><b>${fmt(a.marge)}</b></td><td ${td}>${ok?'<span class="chip c-ok">Oui</span>':'<span class="chip c-bad">Non</span>'}</td><td ${td}><b>${fmt(pr)}</b></td><td ${td}>${fmt(a.cashL)}</td><td ${td}>${a.nClL}${(()=>{const pv=agg[prevYm(ym)+'|'+a.v];if(!pv)return '';const d=a.nClL-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</td><td ${td}>${a.fin==null?'<span class="muted">-</span>':`<span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} %</span>`}</td><td ${td}>${cc(a.cR,cb.rapide)}</td><td ${td}>${cc(a.cM,cb.moyenne)}</td><td ${td}>${cc(a.cL,cb.lente)}</td><td ${td}>${fq(a.cases)}</td><td ${td}>${fmt(a.vente)}</td><td ${td}>${fmt(a.hm)}</td></tr>`}).join('')}
     </tbody></table></div>${rows.some(a=>a.np>0)?`<span class="muted" style="font-size:12px">Non payé : ${rows.filter(a=>a.np>0).map(a=>esc(a.v)+' '+fmt(a.np)+' HTG').join(' · ')}</span>`:''}</section>`}).join('');
+}
+// Contrôles : signaux qui peuvent faire croire à une croissance qui n'en est pas une
+function dirControles(M,agg){
+  const t=today(),cur=t.slice(0,7),rows=Object.values(agg);
+  const card=(title,desc,inner)=>`<section class="card stack"><b>${title}</b><p class="muted" style="margin:0;font-size:12.5px">${desc}</p>${inner}</section>`;
+  // 1. fin de mois
+  const fin=rows.filter(a=>a.fin!=null&&a.ym<cur).sort((a,b)=>a.ym<b.ym?1:-1).slice(0,16);
+  const finHtml=fin.length?`<div class="rows">${fin.map(a=>`<div class="row"><div class="main"><b>${esc(a.v)}</b><small>${ymLabel(a.ym)}</small></div><div class="end"><span class="chip ${a.fin>35?'c-bad':a.fin>25?'c-warn':'c-ok'}">${Math.round(a.fin)} % des points</span></div></div>`).join('')}</div>`:'<div class="empty">Pas encore de mois terminé.</div>';
+  // 2. saisies tardives (60 derniers jours)
+  const tard=M.orders.filter(o=>o.enteredAt&&days(o.date,o.enteredAt)>3&&days(o.date,t)<=60).sort((a,b)=>a.enteredAt<b.enteredAt?1:-1);
+  const tardHtml=tard.length?`<div class="rows">${tard.map(o=>`<div class="row"><div class="main"><b>${esc(o.vend)} · ${esc(M.names[o.cid]||o.cname||o.cid)}</b><small>vendu le ${dShort(o.date)} · saisi le ${dShort(o.enteredAt)} (${days(o.date,o.enteredAt)} j après)</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div class="pts" style="font-size:12.5px">${fp(oPts(o))} pts</div></div></div>`).join('')}</div>`:'<div class="empty">Aucune vente saisie en retard.</div>';
+  // 3. lentes > 50 % des points et marge < 100 000, 2 mois de suite
+  const flag=a=>a.pts>0&&a.ptsL/a.pts>0.5&&a.marge<100000;
+  const sig=rows.filter(a=>flag(a)&&agg[prevYm(a.ym)+'|'+a.v]&&flag(agg[prevYm(a.ym)+'|'+a.v]));
+  const sigHtml=sig.length?`<div class="rows">${sig.map(a=>`<div class="row"><div class="main"><b>${esc(a.v)}</b><small>${ymLabel(prevYm(a.ym))} et ${ymLabel(a.ym)} · ${Math.round(a.ptsL/a.pts*100)} % des points en lentes · marge ${fmt(a.marge)} HTG</small></div><div class="end"><span class="chip c-bad">À discuter</span></div></div>`).join('')}</div>`:'<div class="empty">Aucun agent concerné.</div>';
+  // live: current month last-5-days share
+  const live=rows.filter(a=>a.ym===cur&&a.src.has('App')&&a.pts>0&&lastDays(cur,5)(t));
+  return card('Points faits les 5 derniers jours du mois','Au-dessus de 35 % : vérifier que les clients n\'ont pas été « remplis » pour atteindre l\'objectif (regarder s\'ils recommandent le mois suivant).',finHtml+(live.length?`<small class="muted">Mois en cours : ${live.map(a=>esc(a.v)+' '+Math.round(a.last5/a.pts*100)+' %').join(' · ')}</small>`:''))
+   +card('Ventes saisies en retard','Ventes saisies plus de 3 jours après la date de vente (60 derniers jours). À vérifier : une vente du mois passé ne doit pas compter dans le mois en cours.',tardHtml)
+   +card('Beaucoup de lentes, peu de marge','Agents avec plus de 50 % des points en huiles lentes et moins de 100 000 HTG de marge payée, deux mois de suite. C\'est un sujet de discussion au comité, pas une sanction.',sigHtml);
 }
 // Encaissements : la caisse (Gesmane) confirme ou refuse les paiements déclarés par les vendeurs
 function dirCaisse(M){
@@ -916,8 +946,9 @@ function dirRender(){
   const tot=S2.vend.reduce((a,g)=>({valide:a.valide+g.valide,attente:a.attente+g.attente,cases:a.cases+g.cases,amt:a.amt+g.amt,late:a.late+g.lateAmt}),{valide:0,attente:0,cases:0,amt:0,late:0});
   const nV=Math.max(1,S2.vend.filter(g=>g.v!=='Point Vente').length);
   const nConf=M.orders.filter(o=>o.paidAt&&!o.confirmedAt).length;
-  const tabs=[['equipe','Équipe'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['mois','Mois passés'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
+  const tabs=[['equipe','Équipe'],['caisse','Encaissements'+(nConf?' ('+nConf+')':'')],['mois','Mois passés'],['controles','Contrôles'],['credits','Crédits'],['grille','Grille et objectif'],['vendeurs','Vendeurs']];
   let body='';
+  const PREV=monthAgg(M);
   if(D.tab==='equipe'){
     body=`<section class="card hero"><div class="month-nav"><span class="lbl">Équipe · ${MOIS[m-1]} ${y}</span><span class="hstack"><button data-act="dmprev" aria-label="Mois précédent">‹</button><button data-act="dmnext" aria-label="Mois suivant">›</button></span></div>
       <div class="big num">${fp(tot.valide)} <small>pts validés</small></div>
@@ -932,6 +963,9 @@ function dirRender(){
           <div><b class="num">${fmt(g.margeV)}</b><small>HTG de marge payée (≥ ${fmt(M.objMarge)})</small></div>
           <div><b class="num">${g.encPct==null?'—':Math.round(g.encPct)+' %'}</b><small>payé sous 14 j (≥ 90 %)</small></div>
           <div><b class="num">${g.newC}</b><small>nouveaux clients (+5)</small></div>
+          <div><b class="num">${fmt(g.cashL)}</b><small>HTG de cash libéré par les lentes</small></div>
+          <div><b class="num">${g.clL.size}${(()=>{const pv=PREV[prevYm(D.ym)+'|'+g.v];if(!pv)return '';const d=g.clL.size-pv.nClL;return ` <small style="color:var(${d>=3?'--ok':d<0?'--bad':'--muted'})">${d>0?'+':''}${d}</small>`})()}</b><small>clients lentes (+3 vs mois passé)</small></div>
+          <div><b class="num" style="${g.tard.length?'color:var(--warn)':''}">${g.tard.length}</b><small>vente(s) saisie(s) &gt; 3 j après</small></div>
         </div>
         ${g.late.length?`<span style="color:var(--bad);font-size:13px">${g.late.length} crédit(s) en retard · ${fmt(g.lateAmt)} HTG</span>`:''}
         <div class="rows">${catBars(g.catV,S2.cib,g.catA)}</div>
@@ -944,6 +978,8 @@ function dirRender(){
     body=`<section class="card"><div class="hstack" style="justify-content:space-between"><b>Crédits non payés</b><b class="num" style="color:var(--bad)">${fmt(all.reduce((s,o)=>s+oAmt(o),0))} HTG</b></div><div class="rows">${all.map(o=>{const d=days(o.date,t);return `<div class="row"><div class="main"><b>${esc(M.names[o.cid]||o.cid)}</b><small>${esc(o.vend)} · ${dShort(o.date)} · ${d} j</small></div><div class="end num"><b>${fmt(oAmt(o))}</b><div>${d>DELAI?'<span class="chip c-bad">Retard</span>':`<span class="chip c-warn">${DELAI-d} j restants</span>`}</div></div></div>`}).join('')||'<div class="empty">Aucun crédit ouvert.</div>'}</div></section>`;
   } else if(D.tab==='caisse'){
     body=dirCaisse(M);
+  } else if(D.tab==='controles'){
+    body=dirControles(M,PREV);
   } else if(D.tab==='mois'){
     body=dirMonths(M);
   } else if(D.tab==='vendeurs'){
